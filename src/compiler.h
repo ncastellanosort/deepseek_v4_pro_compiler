@@ -16,6 +16,12 @@ typedef enum {
     TOK_LSHIFT, TOK_RSHIFT,
     TOK_EQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_LAND, TOK_LOR,
+    TOK_PLUS_ASSIGN, TOK_MINUS_ASSIGN, TOK_STAR_ASSIGN, TOK_SLASH_ASSIGN, TOK_MOD_ASSIGN,
+    TOK_AND_ASSIGN, TOK_OR_ASSIGN, TOK_XOR_ASSIGN, TOK_LS_ASSIGN, TOK_RS_ASSIGN,
+    TOK_INC, TOK_DEC, TOK_QUESTION, TOK_COLON,
+    TOK_DO,
+    TOK_INT, TOK_CHAR, TOK_SHORT, TOK_LONG,
+    TOK_CHAR_LITERAL,
     TOK_ERROR
 } TokenType;
 
@@ -40,7 +46,10 @@ typedef enum {
     AST_BINARY, AST_UNARY,
     AST_NUMBER, AST_STRING, AST_VARIABLE,
     AST_INDEX, AST_DEREF, AST_ADDR,
-    AST_ARRAY_DECL   /* array a[size];  → var_name=a, num_value=size */
+    AST_ARRAY_DECL,  /* array a[size];  → var_name=a, num_value=size */
+    AST_TERNARY,     /* cond ? then : else  → left=cond, right=then, next=else */
+    AST_DOWHILE,     /* do body while(cond) → left=cond, right=body */
+    AST_DECL         /* type var = expr     → num_value=type, left=init */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -65,6 +74,11 @@ typedef struct ASTNode {
 #define OP_DEREF  'd'
 #define OP_ADDR   'a'
 
+#define TYPE_INT   0
+#define TYPE_CHAR  1
+#define TYPE_SHORT 2
+#define TYPE_LONG  3
+
 ASTNode *ast_make_program(ASTNode *f);
 ASTNode *ast_make_func(const char *n, ASTNode *p, ASTNode *b);
 ASTNode *ast_make_param(const char *n);
@@ -88,6 +102,10 @@ ASTNode *ast_make_index(const char *arr, ASTNode *idx);
 ASTNode *ast_make_deref(ASTNode *p);
 ASTNode *ast_make_addr(ASTNode *lv);
 ASTNode *ast_make_array_decl(const char *name, int size);
+ASTNode *ast_make_ternary(ASTNode *cond, ASTNode *t, ASTNode *e);
+ASTNode *ast_make_dowhile(ASTNode *body, ASTNode *cond);
+ASTNode *ast_make_decl(int type, const char *name, ASTNode *init);
+ASTNode *ast_clone(ASTNode *n);
 void ast_append_stmt(ASTNode *list, ASTNode *s);
 void ast_free(ASTNode *n);
 void ast_print(ASTNode *n, int ind);

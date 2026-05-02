@@ -20,7 +20,44 @@ static void expect(TokenType t) {
     }
 }
 
+static int is_compound_assign(TokenType t) {
+    return t == TOK_PLUS_ASSIGN || t == TOK_MINUS_ASSIGN || t == TOK_STAR_ASSIGN ||
+           t == TOK_SLASH_ASSIGN || t == TOK_MOD_ASSIGN || t == TOK_AND_ASSIGN ||
+           t == TOK_OR_ASSIGN || t == TOK_XOR_ASSIGN || t == TOK_LS_ASSIGN || t == TOK_RS_ASSIGN;
+}
+
+static char compound_op(TokenType t) {
+    switch(t) {
+        case TOK_PLUS_ASSIGN: return '+';
+        case TOK_MINUS_ASSIGN: return '-';
+        case TOK_STAR_ASSIGN: return '*';
+        case TOK_SLASH_ASSIGN: return '/';
+        case TOK_MOD_ASSIGN: return '%';
+        case TOK_AND_ASSIGN: return '&';
+        case TOK_OR_ASSIGN: return '|';
+        case TOK_XOR_ASSIGN: return '^';
+        case TOK_LS_ASSIGN: return OP_LSHIFT;
+        case TOK_RS_ASSIGN: return OP_RSHIFT;
+        default: return '?';
+    }
+}
+
+static int is_type_keyword(TokenType t) {
+    return t == TOK_INT || t == TOK_CHAR || t == TOK_SHORT || t == TOK_LONG;
+}
+
+static int type_keyword_to_code(TokenType t) {
+    switch(t) {
+        case TOK_INT: return TYPE_INT;
+        case TOK_CHAR: return TYPE_CHAR;
+        case TOK_SHORT: return TYPE_SHORT;
+        case TOK_LONG: return TYPE_LONG;
+        default: return TYPE_INT;
+    }
+}
+
 /* fwd */
+static ASTNode *parse_ternary(void);
 static ASTNode *parse_lor(void);
 static ASTNode *parse_land(void);
 static ASTNode *parse_bitor(void);
@@ -89,15 +126,25 @@ static ASTNode *parse_target(void) {
 static ASTNode *parse_stmt(void) {
     if (check(TOK_IF)) {
         advance(); expect(TOK_LPAREN);
-        ASTNode *c=parse_lor(); expect(TOK_RPAREN);
+        ASTNode *c=parse_ternary(); expect(TOK_RPAREN);
         ASTNode *n=ast_make_if(c, parse_block());
         if (match(TOK_ELSE)) n->next = ast_make_else(parse_block());
         return n;
     }
     if (check(TOK_WHILE)) {
         advance(); expect(TOK_LPAREN);
-        ASTNode *c=parse_lor(); expect(TOK_RPAREN);
+        ASTNode *c=parse_ternary(); expect(TOK_RPAREN);
         return ast_make_while(c, parse_block());
+    }
+    if (check(TOK_DO)) {
+        advance();
+        ASTNode *body = parse_block();
+        expect(TOK_WHILE);
+        expect(TOK_LPAREN);
+        ASTNode *cond = parse_ternary();
+        expect(TOK_RPAREN);
+        expect(TOK_SEMICOLON);
+        return ast_make_dowhile(body, cond);
     }
     if (check(TOK_FOR)) {
         advance(); expect(TOK_LPAREN);
@@ -107,26 +154,42 @@ static ASTNode *parse_stmt(void) {
         else advance();
         /* cond */
         ASTNode *cond = NULL;
-        if (!check(TOK_SEMICOLON)) { cond = parse_lor(); }
+        if (!check(TOK_SEMICOLON)) { cond = parse_ternary(); }
         advance(); /* skip ; */
         /* step */
         ASTNode *step = NULL;
         if (!check(TOK_RPAREN)) {
             if (check(TOK_IDENT)) {
                 ASTNode *tg = parse_target();
-                if (check(TOK_ASSIGN)) {
+                if (check(TOK_INC)) {
                     advance();
-                    step = ast_make_assign(tg, parse_lor());
+                    step = ast_make_assign(tg, ast_make_binary('+', ast_clone(tg), ast_make_number(1)));
+                } else if (check(TOK_DEC)) {
+                    advance();
+                    step = ast_make_assign(tg, ast_make_binary('-', ast_clone(tg), ast_make_number(1)));
+                } else if (check(TOK_ASSIGN)) {
+                    advance();
+                    step = ast_make_assign(tg, parse_ternary());
                 } else {
                     step = tg;
                 }
+            } else if (check(TOK_INC)) {
+                advance();
+                if (!check(TOK_IDENT)) { lexer_error("identificador", current.line, current.col); exit(1); }
+                ASTNode *v = ast_make_variable(current.lexeme); advance();
+                step = ast_make_assign(v, ast_make_binary('+', ast_clone(v), ast_make_number(1)));
+            } else if (check(TOK_DEC)) {
+                advance();
+                if (!check(TOK_IDENT)) { lexer_error("identificador", current.line, current.col); exit(1); }
+                ASTNode *v = ast_make_variable(current.lexeme); advance();
+                step = ast_make_assign(v, ast_make_binary('-', ast_clone(v), ast_make_number(1)));
             } else if (check(TOK_STAR)) {
                 advance();
                 ASTNode *ptr = parse_unary();
                 expect(TOK_ASSIGN);
-                step = ast_make_assign(ast_make_deref(ptr), parse_lor());
+                step = ast_make_assign(ast_make_deref(ptr), parse_ternary());
             } else {
-                step = parse_lor();
+                step = parse_ternary();
             }
         }
         expect(TOK_RPAREN);
@@ -145,18 +208,65 @@ static ASTNode *parse_stmt(void) {
     }
     if (match(TOK_BREAK))    { expect(TOK_SEMICOLON); return ast_make_break(); }
     if (match(TOK_CONTINUE)) { expect(TOK_SEMICOLON); return ast_make_continue(); }
-    if (check(TOK_RETURN))   { advance(); ASTNode *e=parse_lor(); expect(TOK_SEMICOLON); return ast_make_return(e); }
-    if (check(TOK_PRINT))    { advance(); expect(TOK_LPAREN); ASTNode *e=parse_lor(); expect(TOK_RPAREN); expect(TOK_SEMICOLON); return ast_make_print(e); }
-    if (check(TOK_STAR))     { advance(); ASTNode *p=parse_unary(); expect(TOK_ASSIGN); ASTNode *v=parse_lor(); expect(TOK_SEMICOLON); return ast_make_assign(ast_make_deref(p), v); }
+    if (check(TOK_INC)) {
+        advance();
+        if (!check(TOK_IDENT)) { lexer_error("identificador", current.line, current.col); exit(1); }
+        ASTNode *v = ast_make_variable(current.lexeme); advance();
+        expect(TOK_SEMICOLON);
+        return ast_make_assign(v, ast_make_binary('+', ast_clone(v), ast_make_number(1)));
+    }
+    if (check(TOK_DEC)) {
+        advance();
+        if (!check(TOK_IDENT)) { lexer_error("identificador", current.line, current.col); exit(1); }
+        ASTNode *v = ast_make_variable(current.lexeme); advance();
+        expect(TOK_SEMICOLON);
+        return ast_make_assign(v, ast_make_binary('-', ast_clone(v), ast_make_number(1)));
+    }
+    if (check(TOK_RETURN))   { advance(); ASTNode *e=parse_ternary(); expect(TOK_SEMICOLON); return ast_make_return(e); }
+    if (is_type_keyword(current.type)) {
+        int tc = type_keyword_to_code(current.type); advance();
+        if (!check(TOK_IDENT)) { lexer_error("nombre de variable", current.line, current.col); exit(1); }
+        char name[MAX_LEXEME]; strncpy(name, current.lexeme, MAX_LEXEME-1); name[MAX_LEXEME-1]='\0';
+        advance();
+        ASTNode *init = NULL;
+        if (match(TOK_ASSIGN)) init = parse_ternary();
+        expect(TOK_SEMICOLON);
+        return ast_make_decl(tc, name, init);
+    }
+    if (check(TOK_PRINT))    { advance(); expect(TOK_LPAREN); ASTNode *e=parse_ternary(); expect(TOK_RPAREN); expect(TOK_SEMICOLON); return ast_make_print(e); }
+    if (check(TOK_STAR))     {
+        advance(); ASTNode *p=parse_unary();
+        if (is_compound_assign(current.type)) {
+            TokenType op = current.type; advance();
+            ASTNode *v = parse_ternary(); expect(TOK_SEMICOLON);
+            ASTNode *deref = ast_make_deref(p);
+            return ast_make_assign(deref, ast_make_binary(compound_op(op), ast_make_deref(ast_clone(p)), v));
+        }
+        expect(TOK_ASSIGN); ASTNode *v=parse_ternary(); expect(TOK_SEMICOLON);
+        return ast_make_assign(ast_make_deref(p), v);
+    }
     if (check(TOK_IDENT))    {
         ASTNode *tgt = parse_target();
         if (check(TOK_LPAREN)) { advance();
             ASTNode *args=NULL,*at=NULL;
-            if (!check(TOK_RPAREN)) { do { if(match(TOK_COMMA)){} ASTNode *a=parse_lor(); if(!args){args=at=a;}else{at->next=a;at=a;} } while(match(TOK_COMMA)); }
+            if (!check(TOK_RPAREN)) { do { if(match(TOK_COMMA)){} ASTNode *a=parse_ternary(); if(!args){args=at=a;}else{at->next=a;at=a;} } while(match(TOK_COMMA)); }
             expect(TOK_RPAREN); expect(TOK_SEMICOLON);
             return ast_make_call(tgt->var_name, args);
         }
-        expect(TOK_ASSIGN); ASTNode *v=parse_lor(); expect(TOK_SEMICOLON);
+        if (check(TOK_INC)) {
+            advance(); expect(TOK_SEMICOLON);
+            return ast_make_assign(tgt, ast_make_binary('+', ast_clone(tgt), ast_make_number(1)));
+        }
+        if (check(TOK_DEC)) {
+            advance(); expect(TOK_SEMICOLON);
+            return ast_make_assign(tgt, ast_make_binary('-', ast_clone(tgt), ast_make_number(1)));
+        }
+        if (is_compound_assign(current.type)) {
+            TokenType op = current.type; advance();
+            ASTNode *v = parse_ternary(); expect(TOK_SEMICOLON);
+            return ast_make_assign(tgt, ast_make_binary(compound_op(op), ast_clone(tgt), v));
+        }
+        expect(TOK_ASSIGN); ASTNode *v=parse_ternary(); expect(TOK_SEMICOLON);
         return ast_make_assign(tgt, v);
     }
     char buf[100]; snprintf(buf, sizeof(buf), "sentencia inesperada '%s'", token_type_name(current.type));
@@ -165,6 +275,18 @@ static ASTNode *parse_stmt(void) {
 }
 
 /* ── expression parsers ─────────────────────────────────────────── */
+
+static ASTNode *parse_ternary(void) {
+    ASTNode *cond = parse_lor();
+    if (check(TOK_QUESTION)) {
+        advance();
+        ASTNode *t = parse_ternary();
+        expect(TOK_COLON);
+        ASTNode *e = parse_ternary();
+        return ast_make_ternary(cond, t, e);
+    }
+    return cond;
+}
 
 static ASTNode *parse_lor(void) {
     ASTNode *l=parse_land(); while(check(TOK_LOR)){advance();l=ast_make_binary(OP_LOR,l,parse_land());} return l;
@@ -205,16 +327,17 @@ static ASTNode *parse_unary(void) {
 }
 static ASTNode *parse_factor(void) {
     if(check(TOK_NUMBER)){int v=current.int_value;advance();return ast_make_number(v);}
+    if(check(TOK_CHAR_LITERAL)){int v=current.int_value;advance();return ast_make_number(v);}
     if(check(TOK_STRING)){ASTNode *n=ast_make_string(current.lexeme);advance();return n;}
     if(check(TOK_IDENT)){
         ASTNode *tgt=parse_target();
         if(check(TOK_LPAREN)){advance();
             ASTNode *args=NULL,*at=NULL;
-            if(!check(TOK_RPAREN)){do{if(match(TOK_COMMA)){}ASTNode *a=parse_lor();if(!args){args=at=a;}else{at->next=a;at=a;}}while(match(TOK_COMMA));}
+            if(!check(TOK_RPAREN)){do{if(match(TOK_COMMA)){}ASTNode *a=parse_ternary();if(!args){args=at=a;}else{at->next=a;at=a;}}while(match(TOK_COMMA));}
             expect(TOK_RPAREN); return ast_make_call(tgt->var_name,args);
         }
         return tgt;
     }
-    if(match(TOK_LPAREN)){ASTNode *n=parse_lor();expect(TOK_RPAREN);return n;}
+    if(match(TOK_LPAREN)){ASTNode *n=parse_ternary();expect(TOK_RPAREN);return n;}
     lexer_error("esperaba número, id, string o '('", current.line, current.col); exit(1);
 }

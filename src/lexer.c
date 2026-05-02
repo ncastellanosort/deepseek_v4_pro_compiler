@@ -54,6 +54,11 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "return")==0) return TOK_RETURN;
     if (strcmp(s, "print")==0) return TOK_PRINT;
     if (strcmp(s, "array")==0) return TOK_ARRAY;
+    if (strcmp(s, "do")==0) return TOK_DO;
+    if (strcmp(s, "int")==0) return TOK_INT;
+    if (strcmp(s, "char")==0) return TOK_CHAR;
+    if (strcmp(s, "short")==0) return TOK_SHORT;
+    if (strcmp(s, "long")==0) return TOK_LONG;
     return TOK_IDENT;
 }
 
@@ -77,7 +82,7 @@ static Token read_string(void) {
     read_char();
     while (ch != EOF && ch != '"') {
         if (ch == '\\') { read_char();
-            switch (ch) { case 'n':ch='\n';break; case 't':ch='\t';break;
+            switch (ch) { case 'n':ch='\n';break; case 't':ch='\t';break; case 'r':ch='\r';break; case '0':ch='\0';break;
                           case '"':ch='"';break; case '\\':ch='\\';break; default:break; }
         }
         if (i < MAX_LEXEME - 1) b[i++] = (char)ch;
@@ -87,6 +92,25 @@ static Token read_string(void) {
     if (ch != '"') { fprintf(stderr, "Error: string sin cerrar\n"); exit(1); }
     read_char();
     return make_token(TOK_STRING, b);
+}
+
+static Token read_char_literal(void) {
+    read_char(); /* skip opening ' */
+    int val;
+    if (ch == '\\') {
+        read_char(); /* skip backslash */
+        switch(ch) {
+            case 'n': val='\n';break; case 't':val='\t';break; case 'r':val='\r';break;
+            case '0': val='\0';break; case '\\': val='\\';break;
+            case '\'': val='\'';break; case '"':val='"';break; default:val=ch;break;
+        }
+    } else {
+        val=ch;
+    }
+    read_char(); /* skip char */
+    if (ch != '\'') { fprintf(stderr,"Error: char literal sin cerrar\n"); exit(1); }
+    read_char(); /* skip closing ' */
+    Token t=make_token(TOK_CHAR_LITERAL,""); t.int_value=val; return t;
 }
 
 static Token read_twochar(TokenType t2, const char *l2,
@@ -139,6 +163,7 @@ Token next_token(void) {
     skip_ws_comments();
     if (ch == EOF) { Token t=make_token(TOK_EOF,""); t.line=line; return t; }
     if (ch == '"') return read_string();
+    if (ch == '\'') return read_char_literal();
     if (isdigit(ch)) return read_number();
     if (isalpha(ch) || ch == '_') return read_ident();
 
@@ -147,21 +172,45 @@ Token next_token(void) {
         case '=': tok=read_twochar(TOK_EQ,"==",TOK_ASSIGN,"=",'='); break;
         case '!': tok=read_twochar(TOK_NE,"!=",TOK_NOT,"!",'=');   break;
         case '<':
-            if (next_ch=='<') {read_char();read_char();tok=make_token(TOK_LSHIFT,"<<");}
+            if (next_ch=='<'){read_char();read_char();
+                if (ch=='='){read_char();tok=make_token(TOK_LS_ASSIGN,"<<=");}
+                else tok=make_token(TOK_LSHIFT,"<<");}
             else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_LE,"<=");}
             else {read_char();tok=make_token(TOK_LT,"<");} break;
         case '>':
-            if (next_ch=='>') {read_char();read_char();tok=make_token(TOK_RSHIFT,">>");}
+            if (next_ch=='>'){read_char();read_char();
+                if (ch=='='){read_char();tok=make_token(TOK_RS_ASSIGN,">>=");}
+                else tok=make_token(TOK_RSHIFT,">>");}
             else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_GE,">=");}
             else {read_char();tok=make_token(TOK_GT,">");} break;
-        case '&': tok=read_twochar(TOK_LAND,"&&",TOK_BITAND,"&",'&'); break;
-        case '|': tok=read_twochar(TOK_LOR,"||",TOK_BITOR,"|",'|');  break;
-        case '^': read_char(); tok=make_token(TOK_BITXOR,"^"); break;
-        case '+': read_char(); tok=make_token(TOK_PLUS,"+");   break;
-        case '-': read_char(); tok=make_token(TOK_MINUS,"-");  break;
-        case '*': read_char(); tok=make_token(TOK_STAR,"*");   break;
-        case '/': read_char(); tok=make_token(TOK_SLASH,"/");  break;
-        case '%': read_char(); tok=make_token(TOK_MOD,"%");    break;
+        case '&':
+            if (next_ch=='&'){read_char();read_char();tok=make_token(TOK_LAND,"&&");}
+            else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_AND_ASSIGN,"&=");}
+            else {read_char();tok=make_token(TOK_BITAND,"&");} break;
+        case '|':
+            if (next_ch=='|'){read_char();read_char();tok=make_token(TOK_LOR,"||");}
+            else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_OR_ASSIGN,"|=");}
+            else {read_char();tok=make_token(TOK_BITOR,"|");} break;
+        case '^':
+            if (next_ch=='='){read_char();read_char();tok=make_token(TOK_XOR_ASSIGN,"^=");}
+            else {read_char();tok=make_token(TOK_BITXOR,"^");} break;
+        case '+':
+            if (next_ch=='+'){read_char();read_char();tok=make_token(TOK_INC,"++");}
+            else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_PLUS_ASSIGN,"+=");}
+            else {read_char();tok=make_token(TOK_PLUS,"+");} break;
+        case '-':
+            if (next_ch=='-'){read_char();read_char();tok=make_token(TOK_DEC,"--");}
+            else if (next_ch=='='){read_char();read_char();tok=make_token(TOK_MINUS_ASSIGN,"-=");}
+            else {read_char();tok=make_token(TOK_MINUS,"-");} break;
+        case '*':
+            if (next_ch=='='){read_char();read_char();tok=make_token(TOK_STAR_ASSIGN,"*=");}
+            else {read_char();tok=make_token(TOK_STAR,"*");} break;
+        case '/':
+            if (next_ch=='='){read_char();read_char();tok=make_token(TOK_SLASH_ASSIGN,"/=");}
+            else {read_char();tok=make_token(TOK_SLASH,"/");} break;
+        case '%':
+            if (next_ch=='='){read_char();read_char();tok=make_token(TOK_MOD_ASSIGN,"%=");}
+            else {read_char();tok=make_token(TOK_MOD,"%");} break;
         case ',': read_char(); tok=make_token(TOK_COMMA,",");  break;
         case '(': read_char(); tok=make_token(TOK_LPAREN,"("); break;
         case ')': read_char(); tok=make_token(TOK_RPAREN,")"); break;
@@ -170,6 +219,8 @@ Token next_token(void) {
         case '{': read_char(); tok=make_token(TOK_LBRACE,"{"); break;
         case '}': read_char(); tok=make_token(TOK_RBRACE,"}"); break;
         case ';': read_char(); tok=make_token(TOK_SEMICOLON,";"); break;
+        case '?': read_char(); tok=make_token(TOK_QUESTION,"?"); break;
+        case ':': read_char(); tok=make_token(TOK_COLON,":"); break;
         default:
             fprintf(stderr,"Error léxico %d:%d: '%c'\n",line,col,ch);
             tok=make_token(TOK_ERROR,""); read_char(); break;

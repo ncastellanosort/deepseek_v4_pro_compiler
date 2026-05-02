@@ -1,38 +1,64 @@
-/* Nivel final — for, arrays declarados, punteros */
-array vec[10];
+/* ── Nivel 2 — Literales y tipos explícitos ─────────────────────── */
 
-print("=== for loop ===");
-for (i = 0; i < 5; i = i + 1) {
-    print(i);
-}
+print("=== char literals ===");
+print('a');              /* 97 */
+print('A');              /* 65 */
+print('0');              /* 48 */
+print('\n');             /* 10 */
+print('\t');             /* 9 */
+print('\r');             /* 13 */
+print('\0');             /* 0 */
+print('\\');             /* 92 */
 
-print("=== array con for ===");
-for (i = 0; i < 5; i = i + 1) {
-    vec[i] = i * 100;
-}
-for (i = 0; i < 5; i = i + 1) {
-    print(vec[i]);
-}
+print("=== declaracion con init ===");
+int x = 100;
+print(x);               /* 100 */
 
-print("=== puntero indexing ===");
-x = 42;
-p = &x;
-print(p[0]);
+char c = 66;
+print(c);               /* 66 (B) */
 
-print("=== continue en for ===");
-for (i = 0; i < 6; i = i + 1) {
-    if (i == 2 || i == 4) {
-        continue;
-    }
-    print(i);
-}
+short s = 999;
+print(s);               /* 999 */
 
-print("=== break en for ===");
-for (i = 0; i < 10; i = i + 1) {
-    if (i == 3) {
-        break;
-    }
-    print(500 + i);
-}
+long L = 123456;
+print(L);               /* 123456 */
+
+print("=== declaracion sin init ===");
+int y;
+print(y);               /* 0 */
+y = 50;
+print(y);               /* 50 */
+
+char d;
+print(d);               /* 0 */
+d = 'Z';
+print(d);               /* 90 (Z) */
+
+print("=== re-declaracion con init ===");
+int z = 7;
+print(z);               /* 7 */
+z = 77;
+print(z);               /* 77 */
+
+print("=== declaracion + operaciones ===");
+int a = 10;
+int b = 20;
+int sum = a + b;
+print(sum);             /* 30 */
+
+a += b;
+print(a);               /* 30 */
+
+a++;
+print(a);               /* 31 */
+
+print("=== string escapes ===");
+print("tab: \t tab");    /* tab: 	 tab */
+print("line1\nline2");   /* line1
+                            line2 */
+
+print("=== char en expresion ===");
+int val = 'x' + 1;
+print(val);             /* 121 (120+1) */
 
 print("fin");

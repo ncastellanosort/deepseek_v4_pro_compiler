@@ -103,7 +103,22 @@ static void gen_unary(ASTNode *n) {
 
 /* ── LEAF ───────────────────────────────────────────────────────── */
 static void gen_number(ASTNode *n) { fprintf(out,"\tmovq\t$%d, %%rax\n",n->num_value); }
-static void gen_string(ASTNode *n) { int l=new_str(); fprintf(out,"\t.section .rodata\n.LS%d:\n\t.string \"%s\"\n\t.text\n\tleaq\t.LS%d(%%rip), %%rax\n",l,n->var_name,l); }
+/* ── STRING ─────────────────────────────────────────────────────── */
+static void emit_escaped(const char *s) {
+    fputc('"', out);
+    for (; *s; s++) {
+        switch (*s) {
+            case '\n': fputs("\\n", out); break;
+            case '\t': fputs("\\t", out); break;
+            case '\r': fputs("\\r", out); break;
+            case '\\': fputs("\\\\", out); break;
+            case '"':  fputs("\\\"", out); break;
+            default:   fputc(*s, out); break;
+        }
+    }
+    fputc('"', out);
+}
+static void gen_string(ASTNode *n) { int l=new_str(); fprintf(out,"\t.section .rodata\n.LS%d:\n\t.string ",l); emit_escaped(n->var_name); fprintf(out,"\n\t.text\n\tleaq\t.LS%d(%%rip), %%rax\n",l); }
 static void gen_variable(ASTNode *n) { int o=local_find(n->var_name); if(o)fprintf(out,"\tmovq\t%d(%%rbp), %%rax\n",o); else fprintf(out,"\tmovq\t%s(%%rip), %%rax\n",n->var_name); }
 
 /* ── INDEX ──────────────────────────────────────────────────────── */
@@ -134,6 +149,31 @@ static void gen_if_else(ASTNode *ifn,ASTNode *eln) { int el=new_label(),e=new_la
 /* ── WHILE ──────────────────────────────────────────────────────── */
 static void gen_while(ASTNode *n) { int s=new_label(),e=new_label(); push_loop(s,s,e); fprintf(out,".L%d:\n",s); gen_expr(n->left); fprintf(out,"\tcmpq\t$0,%%rax\n\tje\t.L%d\n",e); gen_stmt_list(n->right->next); fprintf(out,"\tjmp\t.L%d\n",s); fprintf(out,".L%d:\n",e); pop_loop(); }
 
+/* ── DOWHILE ────────────────────────────────────────────────────── */
+static void gen_dowhile(ASTNode *n) {
+    int start=new_label(), cond_lbl=new_label(), end=new_label();
+    push_loop(start, cond_lbl, end);
+    fprintf(out,".L%d:\n",start);
+    gen_stmt_list(n->right->next);
+    fprintf(out,".L%d:\n",cond_lbl);
+    gen_expr(n->left);
+    fprintf(out,"\tcmpq\t$0,%%rax\n\tjne\t.L%d\n",start);
+    fprintf(out,".L%d:\n",end);
+    pop_loop();
+}
+
+/* ── TERNARY ────────────────────────────────────────────────────── */
+static void gen_ternary(ASTNode *n) {
+    int el=new_label(), end=new_label();
+    gen_expr(n->left);
+    fprintf(out,"\tcmpq\t$0,%%rax\n\tje\t.L%d\n",el);
+    gen_expr(n->right);
+    fprintf(out,"\tjmp\t.L%d\n",end);
+    fprintf(out,".L%d:\n",el);
+    gen_expr(n->next);
+    fprintf(out,".L%d:\n",end);
+}
+
 /* ── FOR ────────────────────────────────────────────────────────── */
 static void gen_for(ASTNode *n) {
     int start=new_label(), step_lbl=new_label(), end=new_label();
@@ -162,12 +202,14 @@ static void gen_stmt_list(ASTNode *first) {
         if(first->type==AST_IF&&first->next&&first->next->type==AST_ELSE){gen_if_else(first,first->next);first=first->next->next;}
         else if(first->type==AST_IF)   {gen_if(first);first=first->next;}
         else if(first->type==AST_WHILE){gen_while(first);first=first->next;}
+        else if(first->type==AST_DOWHILE){gen_dowhile(first);first=first->next;}
         else if(first->type==AST_FOR)  {gen_for(first);first=first->next;}
         else if(first->type==AST_BREAK) {gen_break();first=first->next;}
         else if(first->type==AST_CONTINUE){gen_continue();first=first->next;}
         else if(first->type==AST_ELSE){fprintf(stderr,"Error: else huérfano\n");exit(1);}
         else if(first->type==AST_RETURN){gen_return(first);first=first->next;}
         else if(first->type==AST_ARRAY_DECL){first=first->next;}
+        else if(first->type==AST_DECL){gen_expr(first);first=first->next;}
         else {gen_expr(first);first=first->next;}
     }
 }
@@ -175,16 +217,29 @@ static void gen_stmt_list(ASTNode *first) {
 /* ── expr dispatch ─────────────────────────────────────────────── */
 static void gen_expr(ASTNode *n) {
     if(!n)return;
-    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; default:fprintf(stderr,"Error interno: tipo %d\n",n->type);exit(1); }
+    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_DECL:{
+        int o=local_find(n->var_name);
+        if(!o&&in_function) o=local_add(n->var_name);
+        if(n->left){gen_expr(n->left);
+            if(o)fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);
+            else if(in_function){o=local_add(n->var_name);fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);}
+            else fprintf(out,"\tmovq\t%%rax, %s(%%rip)\n",n->var_name);}
+        else {
+            if(o)fprintf(out,"\tmovq\t$0, %d(%%rbp)\n",o);
+            else if(in_function){o=local_add(n->var_name);fprintf(out,"\tmovq\t$0, %d(%%rbp)\n",o);}
+            else fprintf(out,"\tmovq\t$0, %s(%%rip)\n",n->var_name);
+        }}break; default:fprintf(stderr,"Error interno: tipo %d\n",n->type);exit(1); }
 }
 
 /* ── scan locals ───────────────────────────────────────────────── */
 static void scan_locals(ASTNode *n) {
     if(!n)return;
     if(n->type==AST_ASSIGN&&n->left&&n->left->type==AST_VARIABLE)local_add(n->left->var_name);
+    if(n->type==AST_DECL)local_add(n->var_name);
     if(n->type==AST_BLOCK||n->type==AST_PROGRAM){for(ASTNode*s=n->next;s;s=s->next)scan_locals(s);}
     if(n->type==AST_IF){scan_locals(n->left);scan_locals(n->right);if(n->next&&n->next->type==AST_ELSE)scan_locals(n->next->right);}
-    if(n->type==AST_WHILE||n->type==AST_FOR){scan_locals(n->left);scan_locals(n->right);}
+    if(n->type==AST_WHILE||n->type==AST_FOR||n->type==AST_DOWHILE){scan_locals(n->left);scan_locals(n->right);}
+    if(n->type==AST_TERNARY){scan_locals(n->left);scan_locals(n->right);scan_locals(n->next);}
     if(n->type==AST_RETURN)scan_locals(n->left);
     if(n->type==AST_PRINT)scan_locals(n->left);
 }
@@ -197,12 +252,17 @@ static void collect_vars(ASTNode *n, char vars[][MAX_LEXEME], int *vc,
         int found=0;for(int i=0;i<*vc;i++)if(!strcmp(vars[i],n->left->var_name)){found=1;break;}
         if(!found&&*vc<128){strcpy(vars[*vc],n->left->var_name);(*vc)++;}
     }
+    if(n->type==AST_DECL){
+        int found=0;for(int i=0;i<*vc;i++)if(!strcmp(vars[i],n->var_name)){found=1;break;}
+        if(!found&&*vc<128){strcpy(vars[*vc],n->var_name);(*vc)++;}
+    }
     if(n->type==AST_INDEX){
         int found=0;for(int i=0;i<*ac;i++)if(!strcmp(arrs[i],n->var_name)){found=1;break;}
         if(!found&&*ac<128){strcpy(arrs[*ac],n->var_name);(*ac)++;}
     }
     collect_vars(n->left,vars,vc,arrs,ac);
     collect_vars(n->right,vars,vc,arrs,ac);
+    collect_vars(n->next,vars,vc,arrs,ac);
     if(n->type==AST_PROGRAM||n->type==AST_BLOCK)
         for(ASTNode*s=n->next;s;s=s->next)collect_vars(s,vars,vc,arrs,ac);
     if(n->type==AST_IF&&n->next&&n->next->type==AST_ELSE)
