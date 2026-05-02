@@ -1,0 +1,7 @@
+def suma(a, a) {
+    return a;
+}
+
+def main() {
+    print(suma(3, 4));
+}

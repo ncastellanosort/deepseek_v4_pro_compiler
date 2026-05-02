@@ -4,7 +4,7 @@ SRCDIR = src
 BUILDDIR = build
 TARGET = $(BUILDDIR)/compilador
 
-SRCS = $(SRCDIR)/main.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/codegen.c $(SRCDIR)/ast.c
+SRCS = $(SRCDIR)/main.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/codegen.c $(SRCDIR)/ast.c $(SRCDIR)/semantic.c
 OBJS = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 .PHONY: all clean test

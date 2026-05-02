@@ -1,0 +1,30 @@
+print("=== type widths ===");
+
+int a = 100;
+print(a);
+
+char b = 65;
+print(b);
+
+short c = 1000;
+print(c);
+
+long d = 123456789;
+print(d);
+
+print("=== char overflow ===");
+char e = 300;
+print(e);
+
+print("=== int truncation ===");
+int f = 500000;
+print(f);
+
+print("=== mixed declarations ===");
+int g;
+g = 50;
+print(g);
+
+char h;
+h = 66;
+print(h);

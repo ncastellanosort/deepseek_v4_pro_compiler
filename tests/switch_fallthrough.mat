@@ -1,0 +1,16 @@
+print("=== switch fall-through ===");
+
+x = 1;
+switch (x) {
+    case 1:
+        print(11);
+    case 2:
+        print(22);
+    case 3:
+        print(33);
+        break;
+    default:
+        print(99);
+}
+
+/* case 1 falls through to 2, then 3 */

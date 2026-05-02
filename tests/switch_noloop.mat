@@ -1,0 +1,12 @@
+print("=== switch with break in loop ===");
+
+i = 0;
+while (i < 3) {
+    i = i + 1;
+    n = i;
+    switch (n) {
+        case 1: print(10); break;
+        case 2: print(20); break;
+        case 3: print(30); break;
+    }
+}

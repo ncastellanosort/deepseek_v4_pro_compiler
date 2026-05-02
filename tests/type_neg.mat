@@ -1,0 +1,13 @@
+print("=== negative values with types ===");
+
+char c = -1;
+print(c);
+
+short s = -1000;
+print(s);
+
+int i = -100000;
+print(i);
+
+long L = -999999;
+print(L);

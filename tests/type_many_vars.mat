@@ -1,0 +1,15 @@
+print("=== many typed variables ===");
+
+char c1 = 'H';
+char c2 = 'i';
+int n1 = 123;
+int n2 = 456;
+short s1 = 789;
+long L1 = 999888;
+
+print(c1);
+print(c2);
+print(n1);
+print(n2);
+print(s1);
+print(L1);

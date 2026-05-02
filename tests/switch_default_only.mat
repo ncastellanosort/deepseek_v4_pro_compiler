@@ -1,0 +1,6 @@
+print("=== switch default only ===");
+
+x = 42;
+switch (x) {
+    default: print(42); break;
+}

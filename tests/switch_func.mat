@@ -1,0 +1,13 @@
+def classify(n) {
+    switch (n) {
+        case 0: return 0;
+        case 1: return 1;
+        default: return 99;
+    }
+}
+
+def main() {
+    print(classify(0));
+    print(classify(1));
+    print(classify(5));
+}

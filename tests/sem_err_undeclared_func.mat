@@ -1,0 +1,3 @@
+def main() {
+    print(noexiste(1));
+}

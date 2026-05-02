@@ -1,0 +1,26 @@
+def sum(a, b) {
+    int x = a + b;
+    return x;
+}
+
+def ch() {
+    char c = 'X';
+    return c;
+}
+
+def sh() {
+    short s = 32000;
+    return s;
+}
+
+def ln() {
+    long L = 999999;
+    return L;
+}
+
+def main() {
+    print(sum(3, 4));
+    print(ch());
+    print(sh());
+    print(ln());
+}

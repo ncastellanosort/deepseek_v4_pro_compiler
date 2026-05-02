@@ -1,0 +1,49 @@
+print("=== test: valid program ===");
+a = 10;
+b = 20;
+print(a + b);
+
+if (a > 5) {
+    print(100);
+}
+
+i = 0;
+while (i < 3) {
+    print(i);
+    i = i + 1;
+}
+
+for (j = 0; j < 3; j++) {
+    print(j);
+}
+
+do {
+    print(99);
+} while (0);
+
+/* arrays */
+array vec[3];
+vec[0] = 42;
+print(vec[0]);
+
+/* explicit types */
+int x = 5;
+char c = 'A';
+short s = 100;
+long L = 12345;
+print(x);
+print(c);
+print(s);
+print(L);
+
+/* ternary */
+print(a > b ? 1 : 0);
+
+/* pointers */
+p = &a;
+print(*p);
+
+/* compound assign */
+a += 1;
+a -= 1;
+print(a);

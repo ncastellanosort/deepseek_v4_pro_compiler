@@ -1,0 +1,22 @@
+print("=== switch empty cases ===");
+
+x = 2;
+switch (x) {
+    case 1:
+    case 2:
+    case 3:
+        print(123);
+        break;
+    default:
+        print(0);
+}
+
+y = 1;
+switch (y) {
+    case 1:
+    case 2:
+        print(12);
+        break;
+    default:
+        print(0);
+}

@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "codegen.h"
 #include "compiler.h"
+#include "semantic.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,8 @@ int main(int argc, char **argv) {
     lexer_init(src_file);
 
     ASTNode *ast = parse_program();
+
+    semantic_check(ast);
 
     if (argc >= 3 && strcmp(argv[2], "--dump-ast") == 0) {
         ast_print(ast, 0);

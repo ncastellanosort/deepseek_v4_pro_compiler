@@ -11,20 +11,42 @@ static int label_counter, str_counter;
 static int ls_start[MAX_LOOP], ls_cont[MAX_LOOP], ls_end[MAX_LOOP];
 static int loop_depth;
 
+/* switch stack: break_target */
+#define MAX_SWITCH 64
+static int sw_end[MAX_SWITCH];
+static int sw_depth;
+
+/* type utilities */
+static int type_size(int t){switch(t){case TYPE_CHAR:return 1; case TYPE_SHORT:return 2; case TYPE_INT:return 4; default:return 8;}}
+static int type_scale(int t){switch(t){case TYPE_CHAR:return 1; case TYPE_SHORT:return 2; case TYPE_INT:return 4; default:return 8;}}
+static const char *type_load_insn(int t){switch(t){case TYPE_CHAR:return "movsbq"; case TYPE_SHORT:return "movswq"; case TYPE_INT:return "movslq"; default:return "movq";}}
+static const char *type_store_insn(int t){switch(t){case TYPE_CHAR:return "movb"; case TYPE_SHORT:return "movw"; case TYPE_INT:return "movl"; default:return "movq";}}
+static const char *type_store_subreg(int t){switch(t){case TYPE_CHAR:return "%al"; case TYPE_SHORT:return "%ax"; case TYPE_INT:return "%eax"; default:return "%rax";}}
+
 /* locals */
 #define MAX_LOCALS 128
-static struct { char name[MAX_LEXEME]; int offset; } locals[MAX_LOCALS];
+static struct { char name[MAX_LEXEME]; int offset; int type; } locals[MAX_LOCALS];
 static int local_count, next_offset, in_function;
+
+/* global variable types (simple mode) */
+#define MAX_GLTYPES 256
+static struct { char name[MAX_LEXEME]; int type; } gltypes[MAX_GLTYPES];
+static int gltype_count;
 
 /* declared arrays */
 #define MAX_ARRAYS 64
-static struct { char name[MAX_LEXEME]; int size; } arrays[MAX_ARRAYS];
+static struct { char name[MAX_LEXEME]; int size; int type; } arrays[MAX_ARRAYS];
 static int array_count;
 
 /* helpers */
 static void locals_clear(void) { local_count=0; next_offset=-8; }
 static int local_find(const char *n) { for(int i=0;i<local_count;i++) if(!strcmp(locals[i].name,n)) return locals[i].offset; return 0; }
-static int local_add(const char *n) { int o=next_offset; strncpy(locals[local_count].name,n,MAX_LEXEME-1); locals[local_count].name[MAX_LEXEME-1]=0; locals[local_count].offset=o; local_count++; next_offset-=8; return o; }
+static int local_get_type(const char *n) { for(int i=0;i<local_count;i++) if(!strcmp(locals[i].name,n)) return locals[i].type; return TYPE_LONG; }
+static int local_add(const char *n) { int o=next_offset; strncpy(locals[local_count].name,n,MAX_LEXEME-1); locals[local_count].name[MAX_LEXEME-1]=0; locals[local_count].offset=o; locals[local_count].type=TYPE_LONG; local_count++; next_offset-=8; return o; }
+static void local_add_typed(const char *n, int t) { int o=next_offset; strncpy(locals[local_count].name,n,MAX_LEXEME-1); locals[local_count].name[MAX_LEXEME-1]=0; locals[local_count].offset=o; locals[local_count].type=t; local_count++; next_offset-=8; }
+static void gltype_set(const char *n, int t) { for(int i=0;i<gltype_count;i++) if(!strcmp(gltypes[i].name,n)){gltypes[i].type=t;return;} strncpy(gltypes[gltype_count].name,n,MAX_LEXEME-1); gltypes[gltype_count].name[MAX_LEXEME-1]=0; gltypes[gltype_count].type=t; gltype_count++; }
+static int gltype_get(const char *n) { for(int i=0;i<gltype_count;i++) if(!strcmp(gltypes[i].name,n)) return gltypes[i].type; return TYPE_LONG; }
+static int arr_type(const char *n) { for(int i=0;i<array_count;i++) if(!strcmp(arrays[i].name,n)) return arrays[i].type; return TYPE_LONG; }
 static int new_label(void) { return label_counter++; }
 static int new_str(void) { return str_counter++; }
 static void push_loop(int s, int c, int e) { if(loop_depth>=MAX_LOOP){fprintf(stderr,"Error: bucles\n");exit(1);} ls_start[loop_depth]=s; ls_cont[loop_depth]=c; ls_end[loop_depth]=e; loop_depth++; }
@@ -34,7 +56,7 @@ static int is_arr(const char *n) { for(int i=0;i<array_count;i++) if(!strcmp(arr
 
 void codegen_init(const char *fn) {
     out=fopen(fn,"w"); if(!out){fprintf(stderr,"Error: '%s'\n",fn);exit(1);}
-    label_counter=0; str_counter=0; loop_depth=0; array_count=0;
+    label_counter=0; str_counter=0; loop_depth=0; sw_depth=0; array_count=0; gltype_count=0;
 }
 
 /* fwd */
@@ -66,9 +88,9 @@ static void gen_return(ASTNode *n) { gen_expr(n->left); fprintf(out,"\tleave\n\t
 static void gen_assign(ASTNode *n) {
     ASTNode *t=n->left, *v=n->right;
     if(t->type==AST_VARIABLE){gen_expr(v);int o=local_find(t->var_name);
-        if(o)fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);
+        if(o){int tp=local_get_type(t->var_name); fprintf(out,"\t%s\t%s, %d(%%rbp)\n",type_store_insn(tp),type_store_subreg(tp),o);}
         else if(in_function){o=local_add(t->var_name);fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);}
-        else fprintf(out,"\tmovq\t%%rax, %s(%%rip)\n",t->var_name);}
+        else {int tp=gltype_get(t->var_name); fprintf(out,"\t%s\t%s, %s(%%rip)\n",type_store_insn(tp),type_store_subreg(tp),t->var_name);}}
     else if(t->type==AST_INDEX){gen_index_addr(t);fprintf(out,"\tpushq\t%%rax\n");gen_expr(v);fprintf(out,"\tpopq\t%%rcx\n\tmovq\t%%rax, (%%rcx)\n");}
     else if(t->type==AST_DEREF){gen_expr(t->left);fprintf(out,"\tpushq\t%%rax\n");gen_expr(v);fprintf(out,"\tpopq\t%%rcx\n\tmovq\t%%rax, (%%rcx)\n");}
 }
@@ -119,18 +141,26 @@ static void emit_escaped(const char *s) {
     fputc('"', out);
 }
 static void gen_string(ASTNode *n) { int l=new_str(); fprintf(out,"\t.section .rodata\n.LS%d:\n\t.string ",l); emit_escaped(n->var_name); fprintf(out,"\n\t.text\n\tleaq\t.LS%d(%%rip), %%rax\n",l); }
-static void gen_variable(ASTNode *n) { int o=local_find(n->var_name); if(o)fprintf(out,"\tmovq\t%d(%%rbp), %%rax\n",o); else fprintf(out,"\tmovq\t%s(%%rip), %%rax\n",n->var_name); }
+static void gen_variable(ASTNode *n) {
+    int o=local_find(n->var_name);
+    int t=o?local_get_type(n->var_name):gltype_get(n->var_name);
+    const char *insn=type_load_insn(t);
+    if(o)fprintf(out,"\t%s\t%d(%%rbp), %%rax\n",insn,o);
+    else fprintf(out,"\t%s\t%s(%%rip), %%rax\n",insn,n->var_name);
+}
 
 /* ── INDEX ──────────────────────────────────────────────────────── */
 static void gen_index_addr(ASTNode *n) {
     int o=local_find(n->var_name);
+    int t=o?local_get_type(n->var_name):(is_arr(n->var_name)?arr_type(n->var_name):TYPE_LONG);
+    int sc=type_scale(t);
     gen_expr(n->left);
     if(o){
-        fprintf(out,"\tleaq\t%d(%%rbp,%%rax,8), %%rax\n",o);
+        fprintf(out,"\tleaq\t%d(%%rbp,%%rax,%d), %%rax\n",o,sc);
     } else if(is_arr(n->var_name)){
-        fprintf(out,"\tpushq\t%%rax\n\tleaq\t%s(%%rip), %%rax\n\tpopq\t%%rcx\n\tleaq\t(%%rax,%%rcx,8), %%rax\n",n->var_name);
+        fprintf(out,"\tpushq\t%%rax\n\tleaq\t%s(%%rip), %%rax\n\tpopq\t%%rcx\n\tleaq\t(%%rax,%%rcx,%d), %%rax\n",n->var_name,sc);
     } else {
-        fprintf(out,"\tpushq\t%%rax\n\tmovq\t%s(%%rip), %%rax\n\tpopq\t%%rcx\n\tleaq\t(%%rax,%%rcx,8), %%rax\n",n->var_name);
+        fprintf(out,"\tpushq\t%%rax\n\tmovq\t%s(%%rip), %%rax\n\tpopq\t%%rcx\n\tleaq\t(%%rax,%%rcx,%d), %%rax\n",n->var_name,sc);
     }
 }
 static void gen_index(ASTNode *n) { gen_index_addr(n); fprintf(out,"\tmovq\t(%%rax), %%rax\n"); }
@@ -192,8 +222,60 @@ static void gen_for(ASTNode *n) {
     pop_loop();
 }
 
+/* ── SWITCH ─────────────────────────────────────────────────────── */
+static void gen_switch(ASTNode *n) {
+    int end_lbl = new_label();
+    sw_end[sw_depth] = end_lbl; sw_depth++;
+
+    gen_expr(n->left);
+
+    ASTNode *cases = n->right;
+
+    int case_count = 0, has_default = 0;
+    for (ASTNode *c = cases; c; c = c->next) {
+        if (c->type == AST_DEFAULT) has_default = 1;
+        else case_count++;
+    }
+
+    int default_lbl = has_default ? new_label() : end_lbl;
+    int *case_lbl = malloc(case_count * sizeof(int));
+
+    int i = 0;
+    for (ASTNode *c = cases; c; c = c->next) {
+        if (c->type == AST_CASE) {
+            case_lbl[i] = new_label();
+            fprintf(out, "\tcmpq\t$%d, %%rax\n", c->num_value);
+            fprintf(out, "\tje\t.L%d\n", case_lbl[i]);
+            i++;
+        }
+    }
+
+    fprintf(out, "\tjmp\t.L%d\n", default_lbl);
+
+    i = 0;
+    for (ASTNode *c = cases; c; c = c->next) {
+        if (c->type == AST_CASE) {
+            fprintf(out, ".L%d:\n", case_lbl[i]);
+            gen_stmt_list(c->left);
+            i++;
+        } else if (c->type == AST_DEFAULT) {
+            fprintf(out, ".L%d:\n", default_lbl);
+            gen_stmt_list(c->left);
+        }
+    }
+
+    fprintf(out, ".L%d:\n", end_lbl);
+
+    free(case_lbl);
+    sw_depth--;
+}
+
 /* ── BREAK / CONTINUE ──────────────────────────────────────────── */
-static void gen_break(void) { if(!loop_depth){fprintf(stderr,"Error: break\n");exit(1);} fprintf(out,"\tjmp\t.L%d\n",ls_end[loop_depth-1]); }
+static void gen_break(void) {
+    if (sw_depth > 0) { fprintf(out, "\tjmp\t.L%d\n", sw_end[sw_depth - 1]); return; }
+    if (!loop_depth) { fprintf(stderr, "Error: break\n"); exit(1); }
+    fprintf(out, "\tjmp\t.L%d\n", ls_end[loop_depth - 1]);
+}
 static void gen_continue(void) { if(!loop_depth){fprintf(stderr,"Error: continue\n");exit(1);} fprintf(out,"\tjmp\t.L%d\n",ls_cont[loop_depth-1]); }
 
 /* ── stmt list ─────────────────────────────────────────────────── */
@@ -204,6 +286,7 @@ static void gen_stmt_list(ASTNode *first) {
         else if(first->type==AST_WHILE){gen_while(first);first=first->next;}
         else if(first->type==AST_DOWHILE){gen_dowhile(first);first=first->next;}
         else if(first->type==AST_FOR)  {gen_for(first);first=first->next;}
+        else if(first->type==AST_SWITCH){gen_switch(first);first=first->next;}
         else if(first->type==AST_BREAK) {gen_break();first=first->next;}
         else if(first->type==AST_CONTINUE){gen_continue();first=first->next;}
         else if(first->type==AST_ELSE){fprintf(stderr,"Error: else huérfano\n");exit(1);}
@@ -214,16 +297,27 @@ static void gen_stmt_list(ASTNode *first) {
     }
 }
 
+/* ── CAST ──────────────────────────────────────────────────────── */
+static void gen_cast(ASTNode *n) {
+    gen_expr(n->left);
+    int target=n->num_value;
+    if(target==TYPE_CHAR) fprintf(out,"\tmovsbq\t%%al, %%rax\n");
+    else if(target==TYPE_SHORT) fprintf(out,"\tmovswq\t%%ax, %%rax\n");
+    else if(target==TYPE_INT) fprintf(out,"\tmovslq\t%%eax, %%rax\n");
+}
+
 /* ── expr dispatch ─────────────────────────────────────────────── */
 static void gen_expr(ASTNode *n) {
     if(!n)return;
-    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_DECL:{
+    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_CAST:gen_cast(n);break;        case AST_DECL:{
+        int t=n->num_value;
         int o=local_find(n->var_name);
-        if(!o&&in_function) o=local_add(n->var_name);
+        if(!o&&in_function){local_add_typed(n->var_name,t);o=local_find(n->var_name);}
+        else if(!in_function) gltype_set(n->var_name,t);
         if(n->left){gen_expr(n->left);
-            if(o)fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);
+            if(o)fprintf(out,"\t%s\t%s, %d(%%rbp)\n",type_store_insn(t),type_store_subreg(t),o);
             else if(in_function){o=local_add(n->var_name);fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);}
-            else fprintf(out,"\tmovq\t%%rax, %s(%%rip)\n",n->var_name);}
+            else fprintf(out,"\t%s\t%s, %s(%%rip)\n",type_store_insn(t),type_store_subreg(t),n->var_name);}
         else {
             if(o)fprintf(out,"\tmovq\t$0, %d(%%rbp)\n",o);
             else if(in_function){o=local_add(n->var_name);fprintf(out,"\tmovq\t$0, %d(%%rbp)\n",o);}
@@ -235,10 +329,11 @@ static void gen_expr(ASTNode *n) {
 static void scan_locals(ASTNode *n) {
     if(!n)return;
     if(n->type==AST_ASSIGN&&n->left&&n->left->type==AST_VARIABLE)local_add(n->left->var_name);
-    if(n->type==AST_DECL)local_add(n->var_name);
+    if(n->type==AST_DECL)local_add_typed(n->var_name,n->num_value);
     if(n->type==AST_BLOCK||n->type==AST_PROGRAM){for(ASTNode*s=n->next;s;s=s->next)scan_locals(s);}
     if(n->type==AST_IF){scan_locals(n->left);scan_locals(n->right);if(n->next&&n->next->type==AST_ELSE)scan_locals(n->next->right);}
     if(n->type==AST_WHILE||n->type==AST_FOR||n->type==AST_DOWHILE){scan_locals(n->left);scan_locals(n->right);}
+    if(n->type==AST_SWITCH){scan_locals(n->left);for(ASTNode*c=n->right;c;c=c->next)scan_locals(c->left);}
     if(n->type==AST_TERNARY){scan_locals(n->left);scan_locals(n->right);scan_locals(n->next);}
     if(n->type==AST_RETURN)scan_locals(n->left);
     if(n->type==AST_PRINT)scan_locals(n->left);
@@ -287,15 +382,15 @@ void codegen_program(ASTNode *program) {
     int func_mode=(first&&first->type==AST_FUNC);
 
     /* collect declared arrays */
-    for(ASTNode*s=program->next;s;s=s->next)if(s->type==AST_ARRAY_DECL){arrays[array_count].size=s->num_value;strcpy(arrays[array_count].name,s->var_name);array_count++;}
+    for(ASTNode*s=program->next;s;s=s->next)if(s->type==AST_ARRAY_DECL){arrays[array_count].size=s->num_value;arrays[array_count].type=TYPE_LONG;strcpy(arrays[array_count].name,s->var_name);array_count++;}
 
     fprintf(out,"\t.bss\n");
     if(!func_mode){
         char vars[128][MAX_LEXEME];int vc=0;
         char arrs[128][MAX_LEXEME];int ac=0;
         collect_vars(program, vars, &vc, arrs, &ac);
-        for(int i=0;i<vc;i++) fprintf(out,"\t.comm\t%s, 8, 8\n",vars[i]);
-        for(int i=0;i<array_count;i++)fprintf(out,"\t.comm\t%s, %d, 8\n",arrays[i].name,arrays[i].size*8);
+        for(int i=0;i<vc;i++){int sz=type_size(gltype_get(vars[i]));fprintf(out,"\t.comm\t%s, %d, 8\n",vars[i],sz);}
+        for(int i=0;i<array_count;i++)fprintf(out,"\t.comm\t%s, %d, 8\n",arrays[i].name,arrays[i].size*type_size(arrays[i].type));
         for(int i=0;i<ac;i++){
             int skip=0;
             for(int j=0;j<vc;j++)if(!strcmp(arrs[i],vars[j])){skip=1;break;}

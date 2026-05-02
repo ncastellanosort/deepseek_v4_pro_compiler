@@ -146,6 +146,52 @@ static ASTNode *parse_stmt(void) {
         expect(TOK_SEMICOLON);
         return ast_make_dowhile(body, cond);
     }
+    if (check(TOK_SWITCH)) {
+        advance(); expect(TOK_LPAREN);
+        ASTNode *expr = parse_ternary();
+        expect(TOK_RPAREN);
+        expect(TOK_LBRACE);
+        ASTNode *cases = NULL, *last_case = NULL;
+        while (!check(TOK_RBRACE) && !check(TOK_EOF)) {
+            if (check(TOK_CASE)) {
+                advance();
+                int val = 0;
+                if (check(TOK_NUMBER) || check(TOK_CHAR_LITERAL)) {
+                    val = current.int_value; advance();
+                } else {
+                    lexer_error("esperaba número o literal char después de 'case'", current.line, current.col);
+                    exit(1);
+                }
+                expect(TOK_COLON);
+                ASTNode *body = NULL, *body_last = NULL;
+                while (!check(TOK_CASE) && !check(TOK_DEFAULT) && !check(TOK_RBRACE) && !check(TOK_EOF)) {
+                    ASTNode *s = parse_stmt();
+                    if (!body) body = body_last = s;
+                    else { body_last->next = s; body_last = s; }
+                }
+                ASTNode *cn = ast_make_case(val, body);
+                if (!cases) cases = last_case = cn;
+                else { last_case->next = cn; last_case = cn; }
+            } else if (check(TOK_DEFAULT)) {
+                advance();
+                expect(TOK_COLON);
+                ASTNode *body = NULL, *body_last = NULL;
+                while (!check(TOK_CASE) && !check(TOK_DEFAULT) && !check(TOK_RBRACE) && !check(TOK_EOF)) {
+                    ASTNode *s = parse_stmt();
+                    if (!body) body = body_last = s;
+                    else { body_last->next = s; body_last = s; }
+                }
+                ASTNode *dn = ast_make_default(body);
+                if (!cases) cases = last_case = dn;
+                else { last_case->next = dn; last_case = dn; }
+            } else {
+                lexer_error("esperaba 'case' o 'default'", current.line, current.col);
+                exit(1);
+            }
+        }
+        expect(TOK_RBRACE);
+        return ast_make_switch(expr, cases);
+    }
     if (check(TOK_FOR)) {
         advance(); expect(TOK_LPAREN);
         /* init */
@@ -338,6 +384,13 @@ static ASTNode *parse_factor(void) {
         }
         return tgt;
     }
-    if(match(TOK_LPAREN)){ASTNode *n=parse_ternary();expect(TOK_RPAREN);return n;}
+    if(match(TOK_LPAREN)){
+        if(is_type_keyword(current.type)){
+            int ct=type_keyword_to_code(current.type);advance();
+            expect(TOK_RPAREN);
+            return ast_make_cast(ct,parse_unary());
+        }
+        ASTNode *n=parse_ternary();expect(TOK_RPAREN);return n;
+    }
     lexer_error("esperaba número, id, string o '('", current.line, current.col); exit(1);
 }

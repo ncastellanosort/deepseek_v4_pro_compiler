@@ -21,6 +21,7 @@ typedef enum {
     TOK_INC, TOK_DEC, TOK_QUESTION, TOK_COLON,
     TOK_DO,
     TOK_INT, TOK_CHAR, TOK_SHORT, TOK_LONG,
+    TOK_SWITCH, TOK_CASE, TOK_DEFAULT,
     TOK_CHAR_LITERAL,
     TOK_ERROR
 } TokenType;
@@ -49,7 +50,11 @@ typedef enum {
     AST_ARRAY_DECL,  /* array a[size];  → var_name=a, num_value=size */
     AST_TERNARY,     /* cond ? then : else  → left=cond, right=then, next=else */
     AST_DOWHILE,     /* do body while(cond) → left=cond, right=body */
-    AST_DECL         /* type var = expr     → num_value=type, left=init */
+    AST_DECL,        /* type var = expr     → num_value=type, left=init */
+    AST_SWITCH,      /* switch(expr) {cases} → left=expr, right=first_case */
+    AST_CASE,        /* case N: stmts       → num_value=N, left=first_stmt, next=next_case */
+    AST_DEFAULT,     /* default: stmts      → left=first_stmt */
+    AST_CAST         /* (type)expr          → num_value=type, left=expr */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -105,6 +110,10 @@ ASTNode *ast_make_array_decl(const char *name, int size);
 ASTNode *ast_make_ternary(ASTNode *cond, ASTNode *t, ASTNode *e);
 ASTNode *ast_make_dowhile(ASTNode *body, ASTNode *cond);
 ASTNode *ast_make_decl(int type, const char *name, ASTNode *init);
+ASTNode *ast_make_switch(ASTNode *expr, ASTNode *cases);
+ASTNode *ast_make_case(int value, ASTNode *body);
+ASTNode *ast_make_default(ASTNode *body);
+ASTNode *ast_make_cast(int type, ASTNode *expr);
 ASTNode *ast_clone(ASTNode *n);
 void ast_append_stmt(ASTNode *list, ASTNode *s);
 void ast_free(ASTNode *n);

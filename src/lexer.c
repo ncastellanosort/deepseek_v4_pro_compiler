@@ -59,6 +59,9 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "char")==0) return TOK_CHAR;
     if (strcmp(s, "short")==0) return TOK_SHORT;
     if (strcmp(s, "long")==0) return TOK_LONG;
+    if (strcmp(s, "switch")==0) return TOK_SWITCH;
+    if (strcmp(s, "case")==0) return TOK_CASE;
+    if (strcmp(s, "default")==0) return TOK_DEFAULT;
     return TOK_IDENT;
 }
 

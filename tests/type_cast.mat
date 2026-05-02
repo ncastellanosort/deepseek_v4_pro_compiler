@@ -1,0 +1,26 @@
+print("=== casting ===");
+
+/* cast int to char → 65 == 'A' */
+int a = 65;
+char b = (char)a;
+print(b);
+
+/* cast char to int */
+char c = 'B';
+int d = (int)c;
+print(d);
+
+/* cast short to int */
+short e = 200;
+int f = (int)e;
+print(f);
+
+/* cast int to short (truncate) */
+int g = 100000;
+short h = (short)g;
+print(h);
+
+/* cast long to int */
+long L = 500000;
+int i = (int)L;
+print(i);

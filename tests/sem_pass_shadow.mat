@@ -1,0 +1,15 @@
+/* variables in different functions don't conflict */
+def foo(x) {
+    int y = x + 1;
+    return y;
+}
+
+def bar(x) {
+    int y = x * 2;
+    return y;
+}
+
+def main() {
+    print(foo(5));
+    print(bar(5));
+}

@@ -28,12 +28,12 @@ make                          # construye build/compilador
 ### Variables y tipos
 
 ```
-x = 5;                    // implícita (int)
-int y = 10;               // explícita con inicialización
+x = 5;                    // implícita (64-bit, → long)
+int y = 10;               // explícita 32-bit con inicialización
 int z;                    // declarada sin inicializar (→ 0)
-char c = 'A';             // char (64-bit internamente)
-short s = 999;            // short (64-bit internamente)
-long L = 123456;          // long (64-bit internamente)
+char c = 'A';             // char (8-bit, sign-ext al cargar)
+short s = 999;            // short (16-bit, sign-ext al cargar)
+long L = 123456;          // long (64-bit)
 ```
 
 ### Expresiones
@@ -84,8 +84,42 @@ for (i = 0; i < 5; i++)  { print(i); }
 for (i = 0; i < 5; ++i)  { print(i); }
 for (i = 3; i > 0; i--)  { print(i); }
 
-break;     // dentro de while/for/do-while
+break;     // dentro de while/for/do-while/switch
 continue;  // dentro de while/for/do-while
+```
+
+### switch/case/default
+
+```
+switch (x) {
+    case 1:  print(10); break;
+    case 2:  print(20); break;
+    default: print(99); break;
+}
+
+// fall-through implícito
+switch (x) {
+    case 1:
+    case 2:
+        print(12); break;
+    default:
+        print(0);
+}
+```
+
+### Casting explícito
+
+```
+int a = 65;
+char b = (char) a;         // trunca y sign-extiende
+print(b);                   // 65 ('A')
+
+short s = (short) 100000;   // trunca a 16-bit → -31072
+int i = (int) s;            // sign-extiende de vuelta
+long L = (long) i;          // extiende a 64-bit
+
+// Cast en expresiones
+print((int) 3.14);          // no-válido aún (float no implementado)
 ```
 
 ### Arrays y punteros
@@ -205,6 +239,19 @@ print("=== string escapes ===");
 print("tab: \t tab");
 print("line1\nline2");
 
+print("=== switch ===");
+n = 2;
+switch (n) {
+    case 1:  print(10); break;
+    case 2:  print(20); break;
+    default: print(99); break;
+}                                           /* 20 */
+
+print("=== casting ===");
+int big = 300;
+char small = (char) big;
+print(small);                               /* 44 (300 truncado a 8-bit) */
+
 print("=== funciones ===");
 def suma(a, b) { return a + b; }
 def main() { print(suma(10, 20)); }         /* 30 */
@@ -220,6 +267,7 @@ compiler/
 │   ├── compiler.h    # Tipos compartidos: Token, ASTNode, enums
 │   ├── lexer.h / .c  # Análisis léxico (tokenización)
 │   ├── parser.h / .c # Análisis sintáctico (descendente recursivo)
+│   ├── semantic.h/.c # Análisis semántico (tabla de símbolos, scopes)
 │   ├── codegen.h / .c# Generación de código assembly x86-64
 │   ├── ast.c         # Constructores / destructores / impresión del AST
 │   └── main.c        # Driver: orquesta fases y llama a gcc
@@ -234,25 +282,33 @@ compiler/
 fuente.mat
     │
     ▼
-┌─────────┐   stream de     ┌────────┐   AST en     ┌─────────┐
-│  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Codegen │
-└─────────┘                 └────────┘              └─────────┘
+┌─────────┐   stream de     ┌────────┐   AST en     ┌──────────┐
+│  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Semantic │
+└─────────┘                 └────────┘              └──────────┘
     │                           │                        │
-    │ next_token() × N          │ parse_program()        │ output.s
-    │                           │ descendente recursivo  │
+    │ next_token() × N          │ parse_program()        │ tabla símbolos
+    │                           │ descendente recursivo  │ chequeo errores
     ▼                           ▼                        ▼
-  TOK_IF, TOK_IDENT,         PROGRAM                  .bss
-  TOK_NUMBER, ...            ├ FUNC(main)             .text
-                               ├ ASSIGN               main:
-                               ├ IF/ELSE                pushq %rbp
-                               ├ WHILE                  ...
-                               └ BINARY(+)              call factorial
-                                                         ret
+  TOK_IF, TOK_IDENT,         PROGRAM                  AST validado ──┐
+  TOK_NUMBER, ...            ├ FUNC(main)                             │
+                               ├ ASSIGN               ┌─────────┐    │
+                               ├ IF/ELSE      ┌──────►│ Codegen │◄───┘
+                               ├ SWITCH       │       └─────────┘
+                               ├ WHILE        │            │
+                               └ CAST         │       output.s
+                                              │            │
+                                              │       .bss / .text
+                                              │       main:
+                                              │         pushq %rbp
+                                              │         ...
+                                              │         call factorial
+                                              │         ret
 ```
 
 Cada fase es independiente y se comunica solo por estructuras de datos:
 - **Lexer → Parser**: struct `Token` (tipo, lexema, valor, línea, columna)
-- **Parser → Codegen**: struct `ASTNode` (árbol enlazado con tipo, operador, hijos)
+- **Parser → Semantic**: struct `ASTNode` (árbol enlazado con tipo, operador, hijos)
+- **Semantic → Codegen**: AST validado (misma estructura, sin errores)
 - **Codegen → gcc**: archivo `output.s` (assembly GAS/AT&T)
 
 ## Detalles de implementación
@@ -273,6 +329,12 @@ Cada fase es independiente y se comunica solo por estructuras de datos:
 - Operadores compuestos (`+=`, `*=`, etc.) se desugaran a `assign + binary`
 - `++`/`--` se desugaran a `x = x ± 1`
 
+### Análisis Semántico
+- Tabla de símbolos con scopes anidados: global → función
+- Dos pasadas: registro de funciones, luego chequeo de cuerpos
+- Chequeos: variable no declarada, redeclaración, args incorrectos, break/continue fuera de loop, return fuera de función
+- `print` y funciones built-in pre-declaradas automáticamente
+
 ### Generación de código (x86-64 Linux)
 - Convención: cada expresión deja su resultado en `%rax`
 - Operaciones binarias: `push left; eval right; pop %rcx; op %rcx, %rax`
@@ -280,22 +342,39 @@ Cada fase es independiente y se comunica solo por estructuras de datos:
 - Variables locales: offsets negativos desde `%rbp`, `subq $N, %rsp` alineado a 16
 - Parámetros: `%rdi, %rsi, %rdx, %rcx, %r8, %r9` (ABI SysV, máx 6 args)
 - Control de flujo: labels únicas `.L0`, `.L1`, ..., saltos `cmp/je/jmp`
-- Break/continue: stack de labels por loop (`ls_start[]`, `ls_cont[]`, `ls_end[]`)
+- Break/continue: stack de labels por loop y switch (`ls_start[]`, `ls_cont[]`, `ls_end[]`, `sw_end[]`). Break sale del switch o loop más interno.
+- Switch: comparaciones lineales `cmpq/je`, fall-through natural entre cases, label de break compartido
+- Tipos reales: load con sign-extensión (`movsbq`/`movswq`/`movslq`), store con truncado (`movb`/`movw`/`movl`), cast explícito (`(type)expr`)
+- Escala de arrays por tipo (elementos de 1/2/4/8 bytes)
 - Strings escapados correctamente para GAS (caracteres especiales → `\n`, `\t`, etc.)
 
 ## Tipos
 
-Todo es entero con signo de 64 bits (`long`) en esta etapa. Las variables son globales en modo simple o locales a cada función en modo `def`. Los strings son literales de solo lectura en `.rodata`.
+Cada tipo tiene su ancho real con signo:
 
-Las palabras clave `int`, `char`, `short`, `long` están disponibles para declaración con y sin inicialización, pero internamente todo es 64-bit — la infraestructura de anchos reales se implementará en un nivel futuro.
+| Tipo | Ancho | Load | Store |
+|------|-------|------|-------|
+| `char` | 8-bit (1 byte) | `movsbq` (sign-ext) | `movb %al` |
+| `short` | 16-bit (2 bytes) | `movswq` (sign-ext) | `movw %ax` |
+| `int` | 32-bit (4 bytes) | `movslq` (sign-ext) | `movl %eax` |
+| `long` | 64-bit (8 bytes) | `movq` | `movq %rax` |
+
+Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para retrocompatibilidad. Variables locales usan offsets negativos desde `%rbp` con 8-byte de alineación. Los strings son literales de solo lectura en `.rodata`.
+
+## Niveles implementados
+
+| Nivel | Contenido | Estado |
+|-------|-----------|--------|
+| 1 | Lexer, parser, codegen base — aritmética, control de flujo, funciones | ✓ |
+| 2 | Literales char, tipos explícitos, compound assign, `++/--`, do-while, ternario | ✓ |
+| 3 | Análisis semántico — tabla de símbolos, scopes, errores | ✓ |
+| 4 | `switch/case/default` con fall-through y break | ✓ |
+| 5 | Anchura real de tipos: `char`=8bit, `short`=16bit, `int`=32bit, `long`=64bit, casting | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
-| 3 | Análisis semántico — tabla de símbolos, scopes, errores: variable no declarada, args incorrectos, break fuera de loop | Alta |
-| 4 | `switch/case/default` con fall-through y break | Media |
-| 5 | Anchura real de tipos: `char`=8bit, `short`=16bit, `int`=32bit, `long`=64bit, casting | Alta |
 | 6 | `struct` — declaración, acceso a miembros, structs anidados | Alta |
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros dobles, strings asignables | Alta |

@@ -1,0 +1,27 @@
+print("=== break/continue inside loops ===");
+i = 0;
+while (i < 10) {
+    if (i == 3) { break; }
+    print(i);
+    i = i + 1;
+}
+
+j = 0;
+while (j < 5) {
+    j = j + 1;
+    if (j == 2) { continue; }
+    print(j);
+}
+
+for (k = 0; k < 5; k++) {
+    if (k == 2) { continue; }
+    if (k == 4) { break; }
+    print(k);
+}
+
+m = 0;
+do {
+    print(m);
+    m = m + 1;
+    if (m >= 2) { break; }
+} while (1);
