@@ -1,0 +1,38 @@
+/* Nivel final — for, arrays declarados, punteros */
+array vec[10];
+
+print("=== for loop ===");
+for (i = 0; i < 5; i = i + 1) {
+    print(i);
+}
+
+print("=== array con for ===");
+for (i = 0; i < 5; i = i + 1) {
+    vec[i] = i * 100;
+}
+for (i = 0; i < 5; i = i + 1) {
+    print(vec[i]);
+}
+
+print("=== puntero indexing ===");
+x = 42;
+p = &x;
+print(p[0]);
+
+print("=== continue en for ===");
+for (i = 0; i < 6; i = i + 1) {
+    if (i == 2 || i == 4) {
+        continue;
+    }
+    print(i);
+}
+
+print("=== break en for ===");
+for (i = 0; i < 10; i = i + 1) {
+    if (i == 3) {
+        break;
+    }
+    print(500 + i);
+}
+
+print("fin");
