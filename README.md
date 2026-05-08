@@ -122,6 +122,37 @@ long L = (long) i;          // extiende a 64-bit
 print((int) 3.14);          // no-válido aún (float no implementado)
 ```
 
+### Structs
+
+```
+struct Point {
+    int x;
+    int y;
+};
+
+struct Point p;             // declaración
+p.x = 10;                   // acceso a miembro
+p.y = 20;
+print(p.x);                 // 10
+print(p.y);                 // 20
+
+struct Point p2;
+p2 = p;                     // asignación struct a struct (copia byte a byte)
+print(p2.x);                // 10
+
+// Structs anidados
+struct Rect {
+    struct Point top_left;
+    struct Point bot_right;
+};
+
+struct Rect r;
+r.top_left.x = 1;           // acceso encadenado
+r.bot_right.y = 4;
+```
+
+Los structs se definen con `struct Nombre { miembros; };`. Los miembros pueden ser de cualquier tipo (`int`, `char`, `short`, `long`) u otros structs ya definidos. El layout en memoria sigue alineación natural del miembro. La asignación entre structs (`a = b`) copia todos los bytes con `rep movsb`.
+
 ### Arrays y punteros
 
 ```
@@ -370,12 +401,12 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 3 | Análisis semántico — tabla de símbolos, scopes, errores | ✓ |
 | 4 | `switch/case/default` con fall-through y break | ✓ |
 | 5 | Anchura real de tipos: `char`=8bit, `short`=16bit, `int`=32bit, `long`=64bit, casting | ✓ |
+| 6 | `struct` — definición, declaración, acceso a miembros, asignación, structs anidados | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
-| 6 | `struct` — declaración, acceso a miembros, structs anidados | Alta |
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros dobles, strings asignables | Alta |
 | 9 | Forward declarations, punteros a función, `extern` funciones de C | Media |

@@ -1,0 +1,20 @@
+struct Point {
+    int x;
+    int y;
+};
+
+print("=== struct assign ===");
+
+struct Point p1;
+p1.x = 42;
+p1.y = 99;
+
+struct Point p2;
+p2 = p1;
+print(p2.x);
+print(p2.y);
+
+print("=== modify copy ===");
+p2.x = 77;
+print(p1.x);
+print(p2.x);

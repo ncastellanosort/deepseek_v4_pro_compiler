@@ -1,0 +1,31 @@
+struct Point {
+    int x;
+    int y;
+};
+
+print("=== struct basic ===");
+
+struct Point p;
+p.x = 10;
+p.y = 20;
+print(p.x);
+print(p.y);
+
+print("=== different types ===");
+
+struct Mixed {
+    char c;
+    short s;
+    int i;
+    long L;
+};
+
+struct Mixed m;
+m.c = 65;
+m.s = 999;
+m.i = 123456;
+m.L = 999888777;
+print(m.c);
+print(m.s);
+print(m.i);
+print(m.L);

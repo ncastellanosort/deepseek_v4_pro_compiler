@@ -62,6 +62,7 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "switch")==0) return TOK_SWITCH;
     if (strcmp(s, "case")==0) return TOK_CASE;
     if (strcmp(s, "default")==0) return TOK_DEFAULT;
+    if (strcmp(s, "struct")==0) return TOK_STRUCT;
     return TOK_IDENT;
 }
 
@@ -224,6 +225,7 @@ Token next_token(void) {
         case ';': read_char(); tok=make_token(TOK_SEMICOLON,";"); break;
         case '?': read_char(); tok=make_token(TOK_QUESTION,"?"); break;
         case ':': read_char(); tok=make_token(TOK_COLON,":"); break;
+        case '.': read_char(); tok=make_token(TOK_DOT,"."); break;
         default:
             fprintf(stderr,"Error léxico %d:%d: '%c'\n",line,col,ch);
             tok=make_token(TOK_ERROR,""); read_char(); break;

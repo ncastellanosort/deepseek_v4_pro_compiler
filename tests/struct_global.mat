@@ -1,0 +1,10 @@
+struct Data {
+    int a;
+    int b;
+};
+
+struct Data g;
+g.a = 100;
+g.b = 200;
+print(g.a);
+print(g.b);

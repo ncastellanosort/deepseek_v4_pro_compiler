@@ -1,0 +1,31 @@
+struct Point {
+    int x;
+    int y;
+};
+
+struct Rect {
+    struct Point top_left;
+    struct Point bot_right;
+};
+
+print("=== nested struct ===");
+
+struct Rect r;
+r.top_left.x = 1;
+r.top_left.y = 2;
+r.bot_right.x = 3;
+r.bot_right.y = 4;
+
+print(r.top_left.x);
+print(r.top_left.y);
+print(r.bot_right.x);
+print(r.bot_right.y);
+
+print("=== nested struct assign ===");
+
+struct Point corner;
+corner.x = 10;
+corner.y = 20;
+r.bot_right = corner;
+print(r.bot_right.x);
+print(r.bot_right.y);

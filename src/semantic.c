@@ -1,4 +1,5 @@
 #include "semantic.h"
+#include "struct.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,6 +180,8 @@ static void check_expr(ASTNode *n) {
             check_expr(target->left);
         } else if (target->type == AST_DEREF) {
             check_expr(target->left);
+        } else if (target->type == AST_MEMBER) {
+            check_expr(target);
         }
         check_expr(n->right);
         break;
@@ -199,6 +202,34 @@ static void check_expr(ASTNode *n) {
     case AST_CAST:
         check_expr(n->left);
         break;
+    case AST_MEMBER: {
+        check_expr(n->left);
+        int stype = TYPE_LONG;
+        if (n->left->type == AST_VARIABLE) {
+            Symbol *sym = scope_lookup(current_scope, n->left->var_name);
+            if (sym) stype = sym->type;
+        } else if (n->left->type == AST_MEMBER) {
+            stype = n->left->op;
+        }
+        if (TYPE_IS_STRUCT(stype)) {
+            int sid = TYPE_STRUCT_ID(stype);
+            int midx = struct_member_index(sid, n->var_name);
+            if (midx < 0) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "struct '%s' no tiene miembro '%s'",
+                         struct_table[sid].name, n->var_name);
+                sem_error(buf);
+            } else {
+                n->num_value = struct_table[sid].members[midx].offset;
+                n->op = (char)struct_table[sid].members[midx].type;
+            }
+        } else {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "acceso a miembro en tipo no-struct");
+            sem_error(buf);
+        }
+        break;
+    }
     case AST_ADDR:
         check_expr(n->left);
         break;
@@ -321,8 +352,10 @@ void semantic_check(ASTNode *ast) {
     Symbol *ps = scope_add(global_scope, "print", SYM_FUNCTION, TYPE_INT);
     ps->param_count = 1;
 
-    ASTNode *first = ast->next;
-    int func_mode = (first && first->type == AST_FUNC);
+    int func_mode = 0;
+    for (ASTNode *s = ast->next; s; s = s->next) {
+        if (s->type == AST_FUNC) { func_mode = 1; break; }
+    }
 
     if (func_mode) {
         register_functions(ast);

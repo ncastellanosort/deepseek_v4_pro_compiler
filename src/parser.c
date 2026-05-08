@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "lexer.h"
+#include "struct.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,14 +73,50 @@ static ASTNode *parse_unary(void);
 static ASTNode *parse_factor(void);
 static ASTNode *parse_block(void);
 static ASTNode *parse_stmt(void);
+static int parse_type(void);
+
+/* ── type parsing ─────────────────────────────────────────────────── */
+
+static int parse_type(void) {
+    if (is_type_keyword(current.type)) {
+        int tc = type_keyword_to_code(current.type);
+        advance();
+        return tc;
+    }
+    if (check(TOK_STRUCT)) {
+        advance();
+        if (!check(TOK_IDENT)) {
+            lexer_error("esperaba nombre de struct", current.line, current.col);
+            exit(1);
+        }
+        char name[MAX_LEXEME];
+        strncpy(name, current.lexeme, MAX_LEXEME - 1);
+        name[MAX_LEXEME - 1] = '\0';
+        advance();
+        int sid = struct_find_by_name(name);
+        if (sid < 0) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "struct '%s' no definido", name);
+            lexer_error(buf, current.line, current.col);
+            exit(1);
+        }
+        return MAKE_STRUCT_TYPE(sid);
+    }
+    lexer_error("esperaba tipo", current.line, current.col);
+    exit(1);
+    return TYPE_INT;
+}
 
 /* ── program ────────────────────────────────────────────────────── */
 
 ASTNode *parse_program(void) {
     advance();
     ASTNode *program = ast_make_program(NULL);
-    if (check(TOK_DEF)) {
-        while (!check(TOK_EOF)) {
+    while (!check(TOK_EOF)) {
+        if (check(TOK_STRUCT)) {
+            ASTNode *s = parse_stmt();
+            if (s) ast_append_stmt(program, s);
+        } else if (check(TOK_DEF)) {
             advance();
             if (!check(TOK_IDENT)) { lexer_error("nombre función", current.line, current.col); exit(1); }
             char fn[MAX_LEXEME]; strncpy(fn, current.lexeme, MAX_LEXEME-1); fn[MAX_LEXEME-1]='\0';
@@ -94,10 +131,10 @@ ASTNode *parse_program(void) {
             }
             expect(TOK_RPAREN);
             ast_append_stmt(program, ast_make_func(fn, params, parse_block()));
+        } else {
+            ast_append_stmt(program, parse_stmt());
         }
-        return program;
     }
-    while (!check(TOK_EOF)) ast_append_stmt(program, parse_stmt());
     return program;
 }
 
@@ -106,7 +143,10 @@ ASTNode *parse_program(void) {
 static ASTNode *parse_block(void) {
     expect(TOK_LBRACE);
     ASTNode *b = ast_make_block(NULL);
-    while (!check(TOK_RBRACE) && !check(TOK_EOF)) ast_append_stmt(b, parse_stmt());
+    while (!check(TOK_RBRACE) && !check(TOK_EOF)) {
+        ASTNode *s = parse_stmt();
+        if (s) ast_append_stmt(b, s);
+    }
     expect(TOK_RBRACE);
     return b;
 }
@@ -117,13 +157,79 @@ static ASTNode *parse_target(void) {
     if (!check(TOK_IDENT)) { lexer_error("identificador", current.line, current.col); exit(1); }
     char name[MAX_LEXEME]; strncpy(name, current.lexeme, MAX_LEXEME-1); name[MAX_LEXEME-1]='\0';
     advance();
-    if (check(TOK_LBRACK)) { advance(); ASTNode *idx=parse_lor(); expect(TOK_RBRACK); return ast_make_index(name,idx); }
-    return ast_make_variable(name);
+    ASTNode *n;
+    if (check(TOK_LBRACK)) { advance(); ASTNode *idx=parse_lor(); expect(TOK_RBRACK); n=ast_make_index(name,idx); }
+    else n=ast_make_variable(name);
+    while (check(TOK_DOT)) {
+        advance();
+        if (!check(TOK_IDENT)) { lexer_error("nombre de miembro", current.line, current.col); exit(1); }
+        n = ast_make_member(n, current.lexeme);
+        advance();
+    }
+    return n;
 }
 
 /* ── stmt ───────────────────────────────────────────────────────── */
 
 static ASTNode *parse_stmt(void) {
+    if (check(TOK_STRUCT)) {
+        advance(); /* skip 'struct' */
+        if (!check(TOK_IDENT)) { lexer_error("nombre de struct", current.line, current.col); exit(1); }
+        char name[MAX_LEXEME]; strncpy(name, current.lexeme, MAX_LEXEME-1); name[MAX_LEXEME-1]='\0';
+        advance();
+        if (check(TOK_LBRACE)) {
+            /* struct definition: name holds the struct type name */
+            int sid = struct_register(name);
+            int cur_offset = 0, max_align = 0;
+            expect(TOK_LBRACE);
+            while (!check(TOK_RBRACE) && !check(TOK_EOF)) {
+                int mt = parse_type();
+                if (!check(TOK_IDENT)) { lexer_error("nombre de miembro", current.line, current.col); exit(1); }
+                StructMember *m = &struct_table[sid].members[struct_table[sid].member_count];
+                strncpy(m->name, current.lexeme, MAX_LEXEME-1); m->name[MAX_LEXEME-1]='\0';
+                advance();
+                expect(TOK_SEMICOLON);
+                int msize, malign;
+                if (TYPE_IS_STRUCT(mt)) {
+                    int inner_id = TYPE_STRUCT_ID(mt);
+                    msize = struct_table[inner_id].size;
+                    malign = struct_table[inner_id].alignment;
+                } else {
+                    switch (mt) {
+                        case TYPE_CHAR: msize=1; malign=1; break;
+                        case TYPE_SHORT: msize=2; malign=2; break;
+                        case TYPE_INT: msize=4; malign=4; break;
+                        default: msize=8; malign=8; break;
+                    }
+                }
+                if (malign > 1) cur_offset = (cur_offset + malign - 1) & ~(malign - 1);
+                m->offset = cur_offset; m->type = mt;
+                struct_table[sid].member_count++;
+                cur_offset += msize;
+                if (malign > max_align) max_align = malign;
+            }
+            expect(TOK_RBRACE); expect(TOK_SEMICOLON);
+            struct_table[sid].alignment = max_align > 0 ? max_align : 1;
+            if (struct_table[sid].alignment > 1)
+                cur_offset = (cur_offset + struct_table[sid].alignment - 1) & ~(struct_table[sid].alignment - 1);
+            struct_table[sid].size = cur_offset;
+            return NULL; /* side effect, no AST node */
+        }
+        /* struct variable declaration: name holds the struct type name */
+        int sid = struct_find_by_name(name);
+        if (sid < 0) {
+            char buf[128]; snprintf(buf, sizeof(buf), "struct '%s' no definido", name);
+            lexer_error(buf, current.line, current.col); exit(1);
+        }
+        int tc = MAKE_STRUCT_TYPE(sid);
+        if (!check(TOK_IDENT)) { lexer_error("nombre de variable", current.line, current.col); exit(1); }
+        char vn[MAX_LEXEME]; strncpy(vn, current.lexeme, MAX_LEXEME-1); vn[MAX_LEXEME-1]='\0';
+        advance();
+        ASTNode *init = NULL;
+        if (match(TOK_ASSIGN)) init = parse_ternary();
+        expect(TOK_SEMICOLON);
+        return ast_make_decl(tc, vn, init);
+    }
     if (check(TOK_IF)) {
         advance(); expect(TOK_LPAREN);
         ASTNode *c=parse_ternary(); expect(TOK_RPAREN);
@@ -269,8 +375,8 @@ static ASTNode *parse_stmt(void) {
         return ast_make_assign(v, ast_make_binary('-', ast_clone(v), ast_make_number(1)));
     }
     if (check(TOK_RETURN))   { advance(); ASTNode *e=parse_ternary(); expect(TOK_SEMICOLON); return ast_make_return(e); }
-    if (is_type_keyword(current.type)) {
-        int tc = type_keyword_to_code(current.type); advance();
+    if (is_type_keyword(current.type) || check(TOK_STRUCT)) {
+        int tc = parse_type();
         if (!check(TOK_IDENT)) { lexer_error("nombre de variable", current.line, current.col); exit(1); }
         char name[MAX_LEXEME]; strncpy(name, current.lexeme, MAX_LEXEME-1); name[MAX_LEXEME-1]='\0';
         advance();
@@ -385,8 +491,8 @@ static ASTNode *parse_factor(void) {
         return tgt;
     }
     if(match(TOK_LPAREN)){
-        if(is_type_keyword(current.type)){
-            int ct=type_keyword_to_code(current.type);advance();
+        if(is_type_keyword(current.type) || check(TOK_STRUCT)){
+            int ct=parse_type();
             expect(TOK_RPAREN);
             return ast_make_cast(ct,parse_unary());
         }

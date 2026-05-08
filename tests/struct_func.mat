@@ -1,0 +1,17 @@
+struct Pair {
+    long first;
+    long second;
+};
+
+def make_pair(a, b) {
+    struct Pair p;
+    p.first = a;
+    p.second = b;
+    return p.first + p.second;
+}
+
+def main() {
+    print("=== struct in function ===");
+    long r = make_pair(100, 200);
+    print(r);
+}

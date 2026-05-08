@@ -22,6 +22,7 @@ typedef enum {
     TOK_DO,
     TOK_INT, TOK_CHAR, TOK_SHORT, TOK_LONG,
     TOK_SWITCH, TOK_CASE, TOK_DEFAULT,
+    TOK_STRUCT, TOK_DOT,
     TOK_CHAR_LITERAL,
     TOK_ERROR
 } TokenType;
@@ -54,7 +55,8 @@ typedef enum {
     AST_SWITCH,      /* switch(expr) {cases} → left=expr, right=first_case */
     AST_CASE,        /* case N: stmts       → num_value=N, left=first_stmt, next=next_case */
     AST_DEFAULT,     /* default: stmts      → left=first_stmt */
-    AST_CAST         /* (type)expr          → num_value=type, left=expr */
+    AST_CAST,        /* (type)expr          → num_value=type, left=expr */
+    AST_MEMBER       /* expr.field          → left=expr, var_name=field, num_value=offset, op=member_type */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -83,6 +85,30 @@ typedef struct ASTNode {
 #define TYPE_CHAR  1
 #define TYPE_SHORT 2
 #define TYPE_LONG  3
+
+#define TYPE_IS_STRUCT(t)  ((t) < 0)
+#define TYPE_STRUCT_ID(t)  (-(t) - 1)
+#define MAKE_STRUCT_TYPE(id) (-(id) - 1)
+
+#define MAX_STRUCTS 64
+#define MAX_MEMBERS 64
+
+typedef struct {
+    char name[MAX_LEXEME];
+    int offset;
+    int type;
+} StructMember;
+
+typedef struct {
+    char name[MAX_LEXEME];
+    int size;
+    int alignment;
+    int member_count;
+    StructMember members[MAX_MEMBERS];
+} StructType;
+
+extern StructType struct_table[MAX_STRUCTS];
+extern int struct_count;
 
 ASTNode *ast_make_program(ASTNode *f);
 ASTNode *ast_make_func(const char *n, ASTNode *p, ASTNode *b);
@@ -114,9 +140,17 @@ ASTNode *ast_make_switch(ASTNode *expr, ASTNode *cases);
 ASTNode *ast_make_case(int value, ASTNode *body);
 ASTNode *ast_make_default(ASTNode *body);
 ASTNode *ast_make_cast(int type, ASTNode *expr);
+ASTNode *ast_make_member(ASTNode *base, const char *member);
 ASTNode *ast_clone(ASTNode *n);
 void ast_append_stmt(ASTNode *list, ASTNode *s);
 void ast_free(ASTNode *n);
 void ast_print(ASTNode *n, int ind);
+
+int struct_register(const char *name);
+int struct_find_by_name(const char *name);
+int struct_member_index(int struct_id, const char *member_name);
+int struct_member_offset(int struct_id, const char *member_name);
+int struct_get_size(int struct_id);
+int struct_get_alignment(int struct_id);
 
 #endif
