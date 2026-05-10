@@ -1,0 +1,9 @@
+extern def malloc(size);
+extern def free(ptr);
+
+def main() {
+    p = malloc(sizeof(long));
+    *p = 42;
+    print(*p);           // 42
+    free(p);
+}

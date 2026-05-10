@@ -64,6 +64,7 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "default")==0) return TOK_DEFAULT;
     if (strcmp(s, "struct")==0) return TOK_STRUCT;
     if (strcmp(s, "extern")==0) return TOK_EXTERN;
+    if (strcmp(s, "sizeof")==0) return TOK_SIZEOF;
     return TOK_IDENT;
 }
 

@@ -9,5 +9,6 @@ int struct_member_index(int struct_id, const char *member_name);
 int struct_member_offset(int struct_id, const char *member_name);
 int struct_get_size(int struct_id);
 int struct_get_alignment(int struct_id);
+int type_size(int t);
 
 #endif

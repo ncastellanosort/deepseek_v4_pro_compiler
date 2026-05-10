@@ -47,3 +47,14 @@ int struct_get_size(int struct_id) {
 int struct_get_alignment(int struct_id) {
     return struct_table[struct_id].alignment;
 }
+
+int type_size(int t) {
+    if (TYPE_IS_STRUCT(t)) return struct_get_size(TYPE_STRUCT_ID(t));
+    if (TYPE_IS_PTR(t)) return 8;
+    switch (t) {
+        case TYPE_CHAR:  return 1;
+        case TYPE_SHORT: return 2;
+        case TYPE_INT:   return 4;
+        default:         return 8;
+    }
+}

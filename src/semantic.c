@@ -115,7 +115,18 @@ static void check_stmt(ASTNode *n) {
             snprintf(buf, sizeof(buf), "redeclaración del array '%s'", n->var_name);
             sem_error(buf);
         } else {
-            scope_add(current_scope, n->var_name, SYM_VARIABLE, TYPE_INT);
+            scope_add(current_scope, n->var_name, SYM_VARIABLE, TYPE_LONG);
+        }
+        break;
+    }
+    case AST_ARRAY_TYPED: {
+        Symbol *existing = scope_lookup_current(current_scope, n->var_name);
+        if (existing) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "redeclaración del array '%s'", n->var_name);
+            sem_error(buf);
+        } else {
+            scope_add(current_scope, n->var_name, SYM_VARIABLE, (int)(unsigned char)n->op);
         }
         break;
     }

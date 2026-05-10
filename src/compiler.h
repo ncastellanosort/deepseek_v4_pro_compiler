@@ -25,6 +25,7 @@ typedef enum {
     TOK_STRUCT, TOK_DOT,
     TOK_CHAR_LITERAL,
     TOK_EXTERN,
+    TOK_SIZEOF,
     TOK_ERROR
 } TokenType;
 
@@ -58,7 +59,8 @@ typedef enum {
     AST_DEFAULT,     /* default: stmts      → left=first_stmt */
     AST_CAST,        /* (type)expr          → num_value=type, left=expr */
     AST_MEMBER,      /* expr.field          → left=expr, var_name=field, num_value=offset, op=member_type */
-    AST_CALL_INDIRECT/* (*fp)(args)          → left=func_expr, right=first_arg */
+    AST_CALL_INDIRECT,/* (*fp)(args)          → left=func_expr, right=first_arg */
+    AST_ARRAY_TYPED  /* int name[size]       → var_name=name, num_value=size, op=type */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -91,6 +93,11 @@ typedef struct ASTNode {
 #define TYPE_IS_STRUCT(t)  ((t) < 0)
 #define TYPE_STRUCT_ID(t)  (-(t) - 1)
 #define MAKE_STRUCT_TYPE(id) (-(id) - 1)
+
+#define TYPE_PTR_BASE      1024
+#define MAKE_PTR_TYPE(b)   (TYPE_PTR_BASE + (b))
+#define TYPE_IS_PTR(t)     ((t) >= TYPE_PTR_BASE)
+#define TYPE_PTR_INNER(t)  ((t) - TYPE_PTR_BASE)
 
 #define MAX_STRUCTS 64
 #define MAX_MEMBERS 64
@@ -135,6 +142,7 @@ ASTNode *ast_make_index(const char *arr, ASTNode *idx);
 ASTNode *ast_make_deref(ASTNode *p);
 ASTNode *ast_make_addr(ASTNode *lv);
 ASTNode *ast_make_array_decl(const char *name, int size);
+ASTNode *ast_make_array_typed(const char *name, int size, int type);
 ASTNode *ast_make_ternary(ASTNode *cond, ASTNode *t, ASTNode *e);
 ASTNode *ast_make_dowhile(ASTNode *body, ASTNode *cond);
 ASTNode *ast_make_decl(int type, const char *name, ASTNode *init);

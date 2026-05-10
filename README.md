@@ -156,16 +156,35 @@ Los structs se definen con `struct Nombre { miembros; };`. Los miembros pueden s
 ### Arrays y punteros
 
 ```
-array vec[10];           // declaración de array
+// Arrays legacy
+array vec[10];              // declaración de array (long por defecto)
 vec[0] = 42;
-print(vec[0]);           // 42
+print(vec[0]);              // 42
 
+// Arrays tipados (Nivel 8)
+char buf[10];               // array de chars (10 bytes)
+buf[0] = 72;                // 'H'
+int arr[5];                 // array de ints (20 bytes, 5 × 4)
+arr[0] = 100;
+
+// Punteros
 x = 42;
-p = &x;                  // dirección de x
-print(*p);               // 42 (dereferencia)
+p = &x;                     // dirección de x
+print(*p);                  // 42 (dereferencia)
 *p = 99;
-print(x);                // 99
-print(p[0]);             // 99 (puntero indexado)
+print(x);                   // 99
+
+// Punteros tipados (Nivel 8)
+int *ip = &x;               // puntero con tipo: load/store usan ancho correcto
+int **pp = &p;              // puntero doble
+print(**pp);                // 99
+
+// Memoria dinámica (Nivel 8)
+extern def malloc(size);
+extern def free(ptr);
+ptr = malloc(sizeof(long));
+*ptr = 42;
+free(ptr);
 ```
 
 ### Funciones
@@ -222,6 +241,63 @@ print(apply(&square, 3));      // 9
 extern def printf(str);        // declara función enlazada externamente
                                // (no requiere definición en el fuente)
 ```
+
+### Punteros tipados
+
+```
+int x = 10;
+int *p = &x;                 // puntero a int
+print(*p);                   // 10 — dereferencia con ancho de tipo (movslq)
+
+int **pp = &p;               // puntero doble
+print(**pp);                 // 10
+
+**pp = 99;
+print(x);                    // 99
+```
+
+Los punteros tienen tipo: `int*`, `char*`, `long*`, etc. El codegen usa la instrucción de carga correcta según el tipo apuntado (`movsbq` para char, `movslq` para int, `movq` para long/punteros).
+
+### Memoria dinámica (malloc/free)
+
+```
+extern def malloc(size);     // declarar función externa de C
+extern def free(ptr);
+
+p = malloc(sizeof(long));    // reserva 8 bytes
+*p = 42;
+print(*p);                   // 42
+free(p);                     // libera
+```
+
+### sizeof
+
+```
+print(sizeof(char));         // 1
+print(sizeof(short));        // 2
+print(sizeof(int));          // 4
+print(sizeof(long));         // 8
+print(sizeof(long *));       // 8 (puntero, 64-bit)
+print(sizeof(int **));       // 8
+```
+
+`sizeof(type)` se evalúa en tiempo de compilación como constante numérica.
+
+### Arrays tipados
+
+```
+char buf[10];                // array de 10 chars (10 bytes)
+buf[0] = 72;                 // 'H'
+buf[1] = 105;                // 'i'
+print(buf[0]);               // 72
+
+int arr[5];                  // array de 5 ints (20 bytes)
+arr[0] = 100;
+arr[4] = 200;
+print(arr[0]);               // 100
+```
+
+Arrays con tipo explícito (`char`, `int`, `short`, `long`) usan el ancho correcto para indexado y load/store.
 
 ### Precedencia de operadores (menor a mayor)
 
@@ -332,11 +408,12 @@ compiler/
 ├── Makefile
 ├── README.md
 ├── src/
-│   ├── compiler.h    # Tipos compartidos: Token, ASTNode, enums
-│   ├── lexer.h / .c  # Análisis léxico (tokenización)
+│   ├── compiler.h    # Tipos compartidos: Token, ASTNode, enums, type macros
+│   ├── lexer.h / .c  # Análisis léxico (tokenización, comentarios, escapes)
 │   ├── parser.h / .c # Análisis sintáctico (descendente recursivo)
 │   ├── semantic.h/.c # Análisis semántico (tabla de símbolos, scopes)
 │   ├── codegen.h / .c# Generación de código assembly x86-64
+│   ├── struct.h / .c # Tabla de structs y type_size() público
 │   ├── ast.c         # Constructores / destructores / impresión del AST
 │   └── main.c        # Driver: orquesta fases y llama a gcc
 ├── examples/
@@ -440,13 +517,13 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 5 | Anchura real de tipos: `char`=8bit, `short`=16bit, `int`=32bit, `long`=64bit, casting | ✓ |
 | 6 | `struct` — definición, declaración, acceso a miembros, asignación, structs anidados | ✓ |
 | 9 | Forward declarations, punteros a función, `extern` | ✓ |
+| 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros tipados, punteros dobles | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
-| 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros dobles, strings asignables | Alta |
 | 10 | Preprocesador — `#include`, `#define` (simples y con parámetros) | Media |
 | 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | Media |
 | 12 | IR intermedia — three-address code, SSA | Muy alta |

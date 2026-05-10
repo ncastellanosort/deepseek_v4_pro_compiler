@@ -1,0 +1,11 @@
+def main() {
+    int x = 10;
+    int *p = &x;
+    print(*p);           // 10
+
+    int **pp = &p;
+    print(**pp);         // 10
+
+    **pp = 99;
+    print(x);            // 99
+}

@@ -1,0 +1,10 @@
+def main() {
+    print(sizeof(char));   // 1
+    print(sizeof(short));  // 2
+    print(sizeof(int));    // 4
+    print(sizeof(long));   // 8
+
+    print(sizeof(char *));   // 8
+    print(sizeof(long *));   // 8
+    print(sizeof(int **));   // 8  (pointer to pointer)
+}

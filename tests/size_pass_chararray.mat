@@ -1,0 +1,16 @@
+def main() {
+    char buf[10];
+    buf[0] = 72;        // 'H'
+    buf[1] = 105;       // 'i'
+    print(buf[0]);      // 72
+    print(buf[1]);      // 105
+
+    buf[0] = 88;        // 'X'
+    print(buf[0]);      // 88
+
+    int arr[5];
+    arr[0] = 100;
+    arr[4] = 200;
+    print(arr[0]);      // 100
+    print(arr[4]);      // 200
+}

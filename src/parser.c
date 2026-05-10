@@ -78,12 +78,11 @@ static int parse_type(void);
 /* ── type parsing ─────────────────────────────────────────────────── */
 
 static int parse_type(void) {
+    int t;
     if (is_type_keyword(current.type)) {
-        int tc = type_keyword_to_code(current.type);
+        t = type_keyword_to_code(current.type);
         advance();
-        return tc;
-    }
-    if (check(TOK_STRUCT)) {
+    } else if (check(TOK_STRUCT)) {
         advance();
         if (!check(TOK_IDENT)) {
             lexer_error("esperaba nombre de struct", current.line, current.col);
@@ -100,11 +99,14 @@ static int parse_type(void) {
             lexer_error(buf, current.line, current.col);
             exit(1);
         }
-        return MAKE_STRUCT_TYPE(sid);
+        t = MAKE_STRUCT_TYPE(sid);
+    } else {
+        lexer_error("esperaba tipo", current.line, current.col);
+        exit(1);
+        return TYPE_INT;
     }
-    lexer_error("esperaba tipo", current.line, current.col);
-    exit(1);
-    return TYPE_INT;
+    while (check(TOK_STAR)) { advance(); t = MAKE_PTR_TYPE(t); }
+    return t;
 }
 
 /* ── program ────────────────────────────────────────────────────── */
@@ -410,6 +412,13 @@ static ASTNode *parse_stmt(void) {
         if (!check(TOK_IDENT)) { lexer_error("nombre de variable", current.line, current.col); exit(1); }
         char name[MAX_LEXEME]; strncpy(name, current.lexeme, MAX_LEXEME-1); name[MAX_LEXEME-1]='\0';
         advance();
+        if (check(TOK_LBRACK)) {
+            advance();
+            if (!check(TOK_NUMBER)) { lexer_error("tamaño del array", current.line, current.col); exit(1); }
+            int sz = current.int_value; advance();
+            expect(TOK_RBRACK); expect(TOK_SEMICOLON);
+            return ast_make_array_typed(name, sz, tc);
+        }
         ASTNode *init = NULL;
         if (match(TOK_ASSIGN)) init = parse_ternary();
         expect(TOK_SEMICOLON);
@@ -522,6 +531,7 @@ static ASTNode *parse_unary(void) {
     return n;
 }
 static ASTNode *parse_factor(void) {
+    if(check(TOK_SIZEOF)){advance();expect(TOK_LPAREN);int t=parse_type();expect(TOK_RPAREN);return ast_make_number(type_size(t));}
     if(check(TOK_NUMBER)){int v=current.int_value;advance();return ast_make_number(v);}
     if(check(TOK_CHAR_LITERAL)){int v=current.int_value;advance();return ast_make_number(v);}
     if(check(TOK_STRING)){ASTNode *n=ast_make_string(current.lexeme);advance();return n;}
