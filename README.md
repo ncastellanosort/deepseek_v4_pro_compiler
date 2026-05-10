@@ -186,6 +186,43 @@ def main() {
 }
 ```
 
+### Forward declarations
+
+```
+def is_even(n);                // declaración anticipada (sin cuerpo)
+
+def is_odd(n) {
+    if (n == 0) { return 0; }
+    return is_even(n - 1);     // llamada a función aún no definida
+}
+
+def is_even(n) {               // definición real
+    if (n == 0) { return 1; }
+    return is_odd(n - 1);
+}
+```
+
+### Punteros a función
+
+```
+def square(x) { return x * x; }
+
+fp = &square;                  // toma la dirección de una función
+print(fp(5));                  // 25 — llamada indirecta
+
+def apply(f, x) {
+    return f(x);               // parámetro usado como función
+}
+print(apply(&square, 3));      // 9
+```
+
+### Funciones externas (C)
+
+```
+extern def printf(str);        // declara función enlazada externamente
+                               // (no requiere definición en el fuente)
+```
+
 ### Precedencia de operadores (menor a mayor)
 
 ```
@@ -402,6 +439,7 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 4 | `switch/case/default` con fall-through y break | ✓ |
 | 5 | Anchura real de tipos: `char`=8bit, `short`=16bit, `int`=32bit, `long`=64bit, casting | ✓ |
 | 6 | `struct` — definición, declaración, acceso a miembros, asignación, structs anidados | ✓ |
+| 9 | Forward declarations, punteros a función, `extern` | ✓ |
 
 ## Futuras implementaciones
 
@@ -409,7 +447,6 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 |-------|-----------|------------|
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros dobles, strings asignables | Alta |
-| 9 | Forward declarations, punteros a función, `extern` funciones de C | Media |
 | 10 | Preprocesador — `#include`, `#define` (simples y con parámetros) | Media |
 | 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | Media |
 | 12 | IR intermedia — three-address code, SSA | Muy alta |

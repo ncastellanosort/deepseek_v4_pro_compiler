@@ -239,6 +239,8 @@ static void check_expr(ASTNode *n) {
             char buf[128];
             snprintf(buf, sizeof(buf), "función '%s' no declarada", n->var_name);
             sem_error(buf);
+        } else if (sym->kind == SYM_VARIABLE || sym->kind == SYM_PARAMETER) {
+            /* indirect call through variable/parameter — OK */
         } else if (sym->kind != SYM_FUNCTION) {
             char buf[128];
             snprintf(buf, sizeof(buf), "'%s' no es una función", n->var_name);
@@ -257,6 +259,10 @@ static void check_expr(ASTNode *n) {
         for (ASTNode *a = n->left; a; a = a->next) check_expr(a);
         break;
     }
+    case AST_CALL_INDIRECT:
+        check_expr(n->left);
+        for (ASTNode *a = n->right; a; a = a->next) check_expr(a);
+        break;
     case AST_PRINT:
         check_expr(n->left);
         break;
@@ -296,6 +302,8 @@ static void check_expr(ASTNode *n) {
 }
 
 static void check_func(ASTNode *func) {
+    if (func->right == NULL) return; // forward decl or extern
+
     Symbol *func_sym = scope_lookup(global_scope, func->var_name);
     if (!func_sym) {
         sem_error("error interno: función no registrada");
@@ -327,14 +335,27 @@ static void check_func(ASTNode *func) {
 static void register_functions(ASTNode *program) {
     for (ASTNode *s = program->next; s; s = s->next) {
         if (s->type != AST_FUNC) continue;
-        if (scope_lookup_current(global_scope, s->var_name)) {
-            char buf[128];
-            snprintf(buf, sizeof(buf), "redeclaración de la función '%s'", s->var_name);
-            sem_error(buf);
+        Symbol *existing = scope_lookup_current(global_scope, s->var_name);
+        int pc = 0;
+        for (ASTNode *p = s->left; p; p = p->next) pc++;
+
+        if (existing) {
+            if (s->right == NULL) continue; // forward decl after anything is OK
+            // current is definition; check if a previous definition exists
+            int prev_def = 0;
+            for (ASTNode *prev = program->next; prev != s; prev = prev->next) {
+                if (prev->type == AST_FUNC && !strcmp(prev->var_name, s->var_name)
+                    && prev->right != NULL) { prev_def = 1; break; }
+            }
+            if (prev_def) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "redeclaración de la función '%s'", s->var_name);
+                sem_error(buf);
+            } else {
+                existing->param_count = pc;
+            }
         } else {
             Symbol *sym = scope_add(global_scope, s->var_name, SYM_FUNCTION, TYPE_INT);
-            int pc = 0;
-            for (ASTNode *p = s->left; p; p = p->next) pc++;
             sym->param_count = pc;
         }
     }
@@ -364,6 +385,20 @@ void semantic_check(ASTNode *ast) {
                 check_func(s);
             } else {
                 check_stmt(s);
+            }
+        }
+        for (ASTNode *s = ast->next; s; s = s->next) {
+            if (s->type == AST_FUNC && s->right == NULL && s->num_value != 1) {
+                int found = 0;
+                for (ASTNode *d = ast->next; d; d = d->next) {
+                    if (d->type == AST_FUNC && !strcmp(d->var_name, s->var_name)
+                        && d->right != NULL) { found = 1; break; }
+                }
+                if (!found) {
+                    char buf[128];
+                    snprintf(buf, sizeof(buf), "función '%s' declarada pero no definida", s->var_name);
+                    sem_error(buf);
+                }
             }
         }
     } else {

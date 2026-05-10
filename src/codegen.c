@@ -79,8 +79,28 @@ static void gen_print(ASTNode *n) {
 static void gen_call(ASTNode *n) {
     int c=0; for(ASTNode *a=n->left;a;a=a->next){gen_expr(a);fprintf(out,"\tpushq\t%%rax\n");c++;}
     if(c>6){fprintf(stderr,"Error: max 6 args\n");exit(1);}
+    int indirect = 0;
+    if(in_function && local_find(n->var_name)) indirect = 1;
+    else {for(int i=0;i<gltype_count;i++) if(!strcmp(gltypes[i].name,n->var_name)){indirect=1;break;}}
+    if(indirect){
+        for(int i=c-1;i>=0;i--)fprintf(out,"\tpopq\t%s\n",arg_reg(i));
+        int o=local_find(n->var_name);
+        if(o)fprintf(out,"\tmovq\t%d(%%rbp), %%r10\n",o);
+        else fprintf(out,"\tmovq\t%s(%%rip), %%r10\n",n->var_name);
+        fprintf(out,"\txorl\t%%eax, %%eax\n\tcall\t*%%r10\n");
+    } else {
+        for(int i=c-1;i>=0;i--)fprintf(out,"\tpopq\t%s\n",arg_reg(i));
+        fprintf(out,"\txorl\t%%eax, %%eax\n\tcall\t%s\n",n->var_name);
+    }
+}
+
+/* ── CALL INDIRECT ──────────────────────────────────────────────── */
+static void gen_call_indirect(ASTNode *n) {
+    int c=0; for(ASTNode *a=n->right;a;a=a->next){gen_expr(a);fprintf(out,"\tpushq\t%%rax\n");c++;}
+    if(c>6){fprintf(stderr,"Error: max 6 args\n");exit(1);}
     for(int i=c-1;i>=0;i--)fprintf(out,"\tpopq\t%s\n",arg_reg(i));
-    fprintf(out,"\txorl\t%%eax, %%eax\n\tcall\t%s\n",n->var_name);
+    gen_expr(n->left);
+    fprintf(out,"\txorl\t%%eax, %%eax\n\tcall\t*%%rax\n");
 }
 
 /* ── RETURN ─────────────────────────────────────────────────────── */
@@ -349,7 +369,7 @@ static void gen_cast(ASTNode *n) {
 /* ── expr dispatch ─────────────────────────────────────────────── */
 static void gen_expr(ASTNode *n) {
     if(!n)return;
-    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_CAST:gen_cast(n);break; case AST_MEMBER:gen_member_addr(n);fprintf(out,"\t%s\t(%%rax), %%rax\n",type_load_insn(n->op));break;        case AST_DECL:{
+    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_CALL_INDIRECT:gen_call_indirect(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_CAST:gen_cast(n);break; case AST_MEMBER:gen_member_addr(n);fprintf(out,"\t%s\t(%%rax), %%rax\n",type_load_insn(n->op));break;        case AST_DECL:{
         int t=n->num_value;
         int o=local_find(n->var_name);
         if(!o&&in_function){local_add_typed(n->var_name,t);o=local_find(n->var_name);}
@@ -458,7 +478,7 @@ void codegen_program(ASTNode *program) {
     }
 
     fprintf(out,"\t.section .rodata\nfmtD:\n\t.string \"%%ld\\n\"\nfmtS:\n\t.string \"%%s\\n\"\n\t.text\n\t.extern\tprintf\n");
-    if(func_mode){for(ASTNode*f=program->next;f;f=f->next){if(f->type!=AST_FUNC)continue;gen_func_header(f);gen_stmt_list(f->right->next);gen_func_footer();}}
+    if(func_mode){for(ASTNode*f=program->next;f;f=f->next){if(f->type!=AST_FUNC)continue;if(!f->right)continue;gen_func_header(f);gen_stmt_list(f->right->next);gen_func_footer();}}
     else {in_function=0;locals_clear();fprintf(out,"\t.globl\tmain\nmain:\n\tpushq\t%%rbp\n\tmovq\t%%rsp, %%rbp\n");gen_stmt_list(program->next);fprintf(out,"\tmovq\t$0, %%rax\n\tleave\n\tret\n");}
 }
 

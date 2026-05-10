@@ -63,6 +63,7 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "case")==0) return TOK_CASE;
     if (strcmp(s, "default")==0) return TOK_DEFAULT;
     if (strcmp(s, "struct")==0) return TOK_STRUCT;
+    if (strcmp(s, "extern")==0) return TOK_EXTERN;
     return TOK_IDENT;
 }
 

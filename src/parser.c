@@ -116,8 +116,10 @@ ASTNode *parse_program(void) {
         if (check(TOK_STRUCT)) {
             ASTNode *s = parse_stmt();
             if (s) ast_append_stmt(program, s);
-        } else if (check(TOK_DEF)) {
-            advance();
+        } else if (check(TOK_DEF) || check(TOK_EXTERN)) {
+            int is_extern = match(TOK_EXTERN);
+            if (!is_extern) advance(); // skip TOK_DEF
+            else expect(TOK_DEF);
             if (!check(TOK_IDENT)) { lexer_error("nombre función", current.line, current.col); exit(1); }
             char fn[MAX_LEXEME]; strncpy(fn, current.lexeme, MAX_LEXEME-1); fn[MAX_LEXEME-1]='\0';
             advance(); expect(TOK_LPAREN);
@@ -130,12 +132,40 @@ ASTNode *parse_program(void) {
                 } while(match(TOK_COMMA));
             }
             expect(TOK_RPAREN);
-            ast_append_stmt(program, ast_make_func(fn, params, parse_block()));
+            if (check(TOK_LBRACE)) {
+                ast_append_stmt(program, ast_make_func(fn, params, parse_block()));
+            } else {
+                expect(TOK_SEMICOLON);
+                ASTNode *fn_node = ast_make_func(fn, params, NULL);
+                fn_node->num_value = is_extern ? 1 : 0;
+                ast_append_stmt(program, fn_node);
+            }
         } else {
             ast_append_stmt(program, parse_stmt());
         }
     }
     return program;
+}
+
+/* ── call suffix ────────────────────────────────────────────────── */
+
+static ASTNode *parse_call_suffix(ASTNode *callee) {
+    if (!check(TOK_LPAREN)) return callee;
+    advance();
+    ASTNode *args = NULL, *at = NULL;
+    if (!check(TOK_RPAREN)) {
+        do {
+            if (match(TOK_COMMA)) {}
+            ASTNode *a = parse_ternary();
+            if (!args) { args = at = a; }
+            else { at->next = a; at = a; }
+        } while (match(TOK_COMMA));
+    }
+    expect(TOK_RPAREN);
+    if (callee->type == AST_VARIABLE)
+        return ast_make_call(callee->var_name, args);
+    else
+        return ast_make_call_indirect(callee, args);
 }
 
 /* ── block ──────────────────────────────────────────────────────── */
@@ -399,11 +429,10 @@ static ASTNode *parse_stmt(void) {
     }
     if (check(TOK_IDENT))    {
         ASTNode *tgt = parse_target();
-        if (check(TOK_LPAREN)) { advance();
-            ASTNode *args=NULL,*at=NULL;
-            if (!check(TOK_RPAREN)) { do { if(match(TOK_COMMA)){} ASTNode *a=parse_ternary(); if(!args){args=at=a;}else{at->next=a;at=a;} } while(match(TOK_COMMA)); }
-            expect(TOK_RPAREN); expect(TOK_SEMICOLON);
-            return ast_make_call(tgt->var_name, args);
+        ASTNode *call = parse_call_suffix(tgt);
+        if (call != tgt) {
+            expect(TOK_SEMICOLON);
+            return call;
         }
         if (check(TOK_INC)) {
             advance(); expect(TOK_SEMICOLON);
@@ -475,7 +504,22 @@ static ASTNode *parse_unary(void) {
     if(check(TOK_NOT)){advance();return ast_make_unary(OP_NOT,parse_unary());}
     if(check(TOK_STAR)){advance();return ast_make_unary(OP_DEREF,parse_unary());}
     if(check(TOK_BITAND)){advance();return ast_make_unary(OP_ADDR,parse_unary());}
-    return parse_factor();
+    ASTNode *n = parse_factor();
+    while (check(TOK_LPAREN)) {
+        advance();
+        ASTNode *args = NULL, *at = NULL;
+        if (!check(TOK_RPAREN)) {
+            do {
+                if (match(TOK_COMMA)) {}
+                ASTNode *a = parse_ternary();
+                if (!args) { args = at = a; }
+                else { at->next = a; at = a; }
+            } while (match(TOK_COMMA));
+        }
+        expect(TOK_RPAREN);
+        n = ast_make_call_indirect(n, args);
+    }
+    return n;
 }
 static ASTNode *parse_factor(void) {
     if(check(TOK_NUMBER)){int v=current.int_value;advance();return ast_make_number(v);}
@@ -483,12 +527,7 @@ static ASTNode *parse_factor(void) {
     if(check(TOK_STRING)){ASTNode *n=ast_make_string(current.lexeme);advance();return n;}
     if(check(TOK_IDENT)){
         ASTNode *tgt=parse_target();
-        if(check(TOK_LPAREN)){advance();
-            ASTNode *args=NULL,*at=NULL;
-            if(!check(TOK_RPAREN)){do{if(match(TOK_COMMA)){}ASTNode *a=parse_ternary();if(!args){args=at=a;}else{at->next=a;at=a;}}while(match(TOK_COMMA));}
-            expect(TOK_RPAREN); return ast_make_call(tgt->var_name,args);
-        }
-        return tgt;
+        return parse_call_suffix(tgt);
     }
     if(match(TOK_LPAREN)){
         if(is_type_keyword(current.type) || check(TOK_STRUCT)){

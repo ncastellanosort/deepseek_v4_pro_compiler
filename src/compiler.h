@@ -24,6 +24,7 @@ typedef enum {
     TOK_SWITCH, TOK_CASE, TOK_DEFAULT,
     TOK_STRUCT, TOK_DOT,
     TOK_CHAR_LITERAL,
+    TOK_EXTERN,
     TOK_ERROR
 } TokenType;
 
@@ -56,7 +57,8 @@ typedef enum {
     AST_CASE,        /* case N: stmts       → num_value=N, left=first_stmt, next=next_case */
     AST_DEFAULT,     /* default: stmts      → left=first_stmt */
     AST_CAST,        /* (type)expr          → num_value=type, left=expr */
-    AST_MEMBER       /* expr.field          → left=expr, var_name=field, num_value=offset, op=member_type */
+    AST_MEMBER,      /* expr.field          → left=expr, var_name=field, num_value=offset, op=member_type */
+    AST_CALL_INDIRECT/* (*fp)(args)          → left=func_expr, right=first_arg */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -141,6 +143,7 @@ ASTNode *ast_make_case(int value, ASTNode *body);
 ASTNode *ast_make_default(ASTNode *body);
 ASTNode *ast_make_cast(int type, ASTNode *expr);
 ASTNode *ast_make_member(ASTNode *base, const char *member);
+ASTNode *ast_make_call_indirect(ASTNode *func_expr, ASTNode *args);
 ASTNode *ast_clone(ASTNode *n);
 void ast_append_stmt(ASTNode *list, ASTNode *s);
 void ast_free(ASTNode *n);

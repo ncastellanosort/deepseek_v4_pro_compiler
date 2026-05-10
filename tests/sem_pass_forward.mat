@@ -1,0 +1,16 @@
+def is_even(n);
+
+def is_odd(n) {
+    if (n == 0) { return 0; }
+    return is_even(n - 1);
+}
+
+def is_even(n) {
+    if (n == 0) { return 1; }
+    return is_odd(n - 1);
+}
+
+def main() {
+    print(is_even(4));  // 1
+    print(is_odd(4));   // 0
+}

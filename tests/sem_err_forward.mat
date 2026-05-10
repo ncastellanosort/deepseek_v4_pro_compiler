@@ -1,0 +1,5 @@
+def no_def(x);
+
+def main() {
+    print(1);
+}
