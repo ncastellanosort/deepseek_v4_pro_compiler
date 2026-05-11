@@ -1,0 +1,27 @@
+def main() {
+    if (0) {
+        print(999);        /* eliminado */
+    }
+
+    if (1) {
+        print(10);         /* conservado */
+    } else {
+        print(888);        /* eliminado */
+    }
+
+    if (0) {
+        print(777);        /* eliminado */
+    } else {
+        print(20);         /* conservado */
+    }
+
+    while (0) {
+        print(666);        /* eliminado */
+    }
+
+    print(30);             /* conserved */
+
+    return 30;
+    print(555);            /* dead */
+    print(444);            /* dead */
+}

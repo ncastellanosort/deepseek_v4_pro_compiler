@@ -1,0 +1,6 @@
+def main() {
+    print(10);
+    return 30;
+    print(555);
+    print(444);
+}

@@ -204,6 +204,37 @@ free(ptr);
 - Protección contra recursión infinita al expandir
 - Las macros no se expanden dentro de strings ni char literals
 
+### Optimizaciones (Nivel 11)
+
+El optimizador aplica 4 pases sobre el AST en bucle hasta punto fijo (máx 10 iteraciones):
+
+| Pase | Descripción | Ejemplo |
+|------|-------------|---------|
+| **Constant folding** | Evalúa expresiones constantes en compilación | `3+4*2` → `11` |
+| **Copy propagation** | Sustituye variables por sus valores conocidos | `x=5; y=x;` → `y=5;` |
+| **Dead code elimination** | Elimina código inalcanzable | `if(0){...}` → eliminado |
+| **Function inlining** | Expande funciones pequeñas inline | `square(5)` → `25` |
+
+```
+// Constant folding
+print(3 + 4 * 2);               // → print(11)
+
+// Dead code elimination
+if (0) { print(999); }          // eliminado
+if (1) { print(10); }           // → print(10)
+while (0) { print(666); }       // eliminado
+return 30;
+print(555);                     // eliminado (código tras return)
+
+// Function inlining (funciones ≤3 params, un solo return, sin recursión)
+def square(x) { return x * x; }
+print(square(5));               // → print(25) (inline + folding)
+
+// Combinado con preprocesador
+#define MAX(a,b) ((a)>(b)?(a):(b))
+print(MAX(10, 20));             // → print(20)
+```
+
 ### Funciones
 
 ```
@@ -429,6 +460,7 @@ compiler/
 │   ├── lexer.h / .c   # Análisis léxico (tokenización, comentarios, escapes)
 │   ├── parser.h / .c  # Análisis sintáctico (descendente recursivo)
 │   ├── preprocessor.h/.c  # Preprocesador (#include, #define), fase previa al lexer
+│   ├── optimizer.h / .c # Optimizador AST (folding, copy-prop, dead-code, inline)
 │   ├── semantic.h/.c  # Análisis semántico (tabla de símbolos, scopes)
 │   ├── codegen.h / .c # Generación de código assembly x86-64
 │   ├── struct.h / .c  # Tabla de structs y type_size() público
@@ -445,20 +477,27 @@ compiler/
 fuente.mat
     │
     ▼
-┌───────────────┐  fuente     ┌─────────┐   stream de     ┌────────┐   AST en     ┌──────────┐
-│ Preprocessor  │───  pp  ──► │  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Semantic │
-└───────────────┘             └─────────┘                 └────────┘              └──────────┘
-    │                           │                        │                          │
-    │ lee fuente pp             │ next_token() × N        │ parse_program()        │ tabla símbolos
-    │ expande macros            │                          │ descendente recursivo  │ chequeo errores
-    ▼                           ▼                          ▼                        ▼
-  fuente sin          TOK_IF, TOK_IDENT,         PROGRAM                  AST validado ──┐
-  directivas          TOK_NUMBER, ...            ├ FUNC(main)                             │
-  ni macros                                      ├ ASSIGN               ┌─────────┐    │
-                                                 ├ IF/ELSE      ┌──────►│ Codegen │◄───┘
-                                                 ├ SWITCH       │       └─────────┘
-                                                 ├ WHILE        │            │
-                                                 └ CAST         │       output.s
+┌───────────────┐  fuente     ┌─────────┐   stream de     ┌────────┐   AST en     ┌──────────┐   AST        ┌───────────┐
+│ Preprocessor  │───  pp  ──► │  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Semantic │── opt ──► │ Optimizer │
+└───────────────┘             └─────────┘                 └────────┘              └──────────┘           └───────────┘
+    │                           │                        │                          │                        │
+    │ lee fuente pp             │ next_token() × N        │ parse_program()        │ tabla símbolos         │ folding
+    │ expande macros            │                          │ descendente recursivo  │ chequeo errores        │ copy-prop
+    ▼                           ▼                          ▼                        ▼                        │ dead-code
+  fuente sin          TOK_IF, TOK_IDENT,         PROGRAM                  AST validado                   │ inline
+  directivas          TOK_NUMBER, ...            ├ FUNC(main)                             │               │
+  ni macros                                      ├ ASSIGN               ┌─────────┐      │               │
+                                                 ├ IF/ELSE      ┌──────►│ Codegen │◄─────┘               │
+                                                 ├ SWITCH       │       └─────────┘                      │
+                                                 ├ WHILE        │            │                            │
+                                                 └ CAST         │       output.s                         │
+                                                                │            │                            │
+                                                                │       .bss / .text                      │
+                                                                │       main:                            │
+                                                                │         pushq %rbp                      │
+                                                                │         ...                             │
+                                                                │         call factorial                  │
+                                                                │         ret                             │
                                                                 │            │
                                                                 │       .bss / .text
                                                                 │       main:
@@ -472,7 +511,8 @@ Cada fase es independiente y se comunica solo por estructuras de datos:
 - **Preprocessor → Lexer**: archivo fuente preprocesado (sin directivas, macros expandidas)
 - **Lexer → Parser**: struct `Token` (tipo, lexema, valor, línea, columna)
 - **Parser → Semantic**: struct `ASTNode` (árbol enlazado con tipo, operador, hijos)
-- **Semantic → Codegen**: AST validado (misma estructura, sin errores)
+- **Semantic → Optimizer**: AST validado (4 pases de optimización en bucle)
+- **Optimizer → Codegen**: AST optimizado
 - **Codegen → gcc**: archivo `output.s` (assembly GAS/AT&T)
 
 ## Detalles de implementación
@@ -485,6 +525,14 @@ Cada fase es independiente y se comunica solo por estructuras de datos:
 - Expansión encadenada de macros con protección contra recursión infinita
 - Las macros no se expanden dentro de strings ni char literals
 - Soporte de continuación de línea con backslash `\`
+
+### Optimizador
+- Se ejecuta entre el análisis semántico y el codegen, transformando el AST in-place
+- 4 pases en bucle de punto fijo (máx 10 iteraciones) que se habilitan mutuamente
+- **Constant folding**: recorre el AST bottom-up; evalúa operaciones binarias, unarias, ternarias y casts con operandos constantes
+- **Copy propagation**: dentro de cada bloque básico, sustituye variables por constantes o copias simples; se invalida en saltos y llamadas
+- **Dead code elimination**: elimina `if(0)`/`if(1)`/`while(0)` con condiciones constantes, y código inalcanzable tras `return`/`break`/`continue`
+- **Function inlining**: expande funciones de un solo `return`, ≤3 parámetros, sin recursión; combinado con folding produce constantes
 
 ### Lexer
 - Lookahead de 1 carácter (`ch` / `next_ch`)
@@ -547,13 +595,13 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 9 | Forward declarations, punteros a función, `extern` | ✓ |
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros tipados, punteros dobles | ✓ |
 | 10 | Preprocesador — `#include`, `#define` (simple y función-like), macros encadenadas | ✓ |
+| 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
-| 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | Media |
 | 12 | IR intermedia — three-address code, SSA | Muy alta |
 | 13 | Backends adicionales — ARM64, WASM, RISC-V | Muy alta |
 

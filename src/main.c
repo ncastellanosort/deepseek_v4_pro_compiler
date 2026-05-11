@@ -3,6 +3,7 @@
 #include "codegen.h"
 #include "compiler.h"
 #include "semantic.h"
+#include "optimizer.h"
 #include "preprocessor.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,8 @@ int main(int argc, char **argv) {
     ASTNode *ast = parse_program();
 
     semantic_check(ast);
+
+    optimize(ast);
 
     if (argc >= 3 && strcmp(argv[2], "--dump-ast") == 0) {
         ast_print(ast, 0);

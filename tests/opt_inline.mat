@@ -1,0 +1,9 @@
+def square(x) { return x * x; }
+def add(a, b) { return a + b; }
+def constant() { return 99; }
+
+def main() {
+    print(square(5));     /* debe hacer inline → 5 * 5 → 25 */
+    print(add(10, 20));   /* debe hacer inline → 10 + 20 → 30 */
+    print(constant());    /* debe hacer inline → 99 */
+}
