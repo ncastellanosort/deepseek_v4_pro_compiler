@@ -1,0 +1,8 @@
+#define MAX(a,b)    ((a)>(b)?(a):(b))
+#define SQUARE(x)    ((x)*(x))
+
+def main() {
+    print(MAX(10, 20));   /* 20 */
+    print(SQUARE(5));     /* 25 */
+    print(MAX(3+4, 5));   /* 7 */
+}

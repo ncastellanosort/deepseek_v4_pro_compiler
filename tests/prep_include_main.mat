@@ -1,0 +1,6 @@
+#include "prep_include_lib.mat"
+
+def main() {
+    print(PI());           /* 314 */
+    print(add(10, 20));    /* 30 */
+}

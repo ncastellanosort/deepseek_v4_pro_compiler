@@ -187,6 +187,23 @@ ptr = malloc(sizeof(long));
 free(ptr);
 ```
 
+### Preprocesador
+
+```
+#define MAX 100                 // macro simple
+#define SALUDO "hola"           // macro con string
+#define MAX(a,b) ((a)>(b)?(a):(b))  // macro función-like
+#define SQUARE(x) ((x)*(x))
+
+#include "utils.mat"            // inclusión de archivo (ruta relativa)
+```
+
+- `#define` — macros simples (objeto) y función-like con parámetros
+- `#include "..."` — inclusión recursiva de archivos, rutas relativas al fuente
+- Expansión encadenada (`#define B A` donde `A` es otra macro)
+- Protección contra recursión infinita al expandir
+- Las macros no se expanden dentro de strings ni char literals
+
 ### Funciones
 
 ```
@@ -408,14 +425,15 @@ compiler/
 ├── Makefile
 ├── README.md
 ├── src/
-│   ├── compiler.h    # Tipos compartidos: Token, ASTNode, enums, type macros
-│   ├── lexer.h / .c  # Análisis léxico (tokenización, comentarios, escapes)
-│   ├── parser.h / .c # Análisis sintáctico (descendente recursivo)
-│   ├── semantic.h/.c # Análisis semántico (tabla de símbolos, scopes)
-│   ├── codegen.h / .c# Generación de código assembly x86-64
-│   ├── struct.h / .c # Tabla de structs y type_size() público
-│   ├── ast.c         # Constructores / destructores / impresión del AST
-│   └── main.c        # Driver: orquesta fases y llama a gcc
+│   ├── compiler.h     # Tipos compartidos: Token, ASTNode, enums, type macros
+│   ├── lexer.h / .c   # Análisis léxico (tokenización, comentarios, escapes)
+│   ├── parser.h / .c  # Análisis sintáctico (descendente recursivo)
+│   ├── preprocessor.h/.c  # Preprocesador (#include, #define), fase previa al lexer
+│   ├── semantic.h/.c  # Análisis semántico (tabla de símbolos, scopes)
+│   ├── codegen.h / .c # Generación de código assembly x86-64
+│   ├── struct.h / .c  # Tabla de structs y type_size() público
+│   ├── ast.c          # Constructores / destructores / impresión del AST
+│   └── main.c         # Driver: orquesta fases y llama a gcc
 ├── examples/
 │   └── test.mat      # Programa de prueba
 └── build/            # build/compilador, build/output.s, build/prog
@@ -427,36 +445,46 @@ compiler/
 fuente.mat
     │
     ▼
-┌─────────┐   stream de     ┌────────┐   AST en     ┌──────────┐
-│  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Semantic │
-└─────────┘                 └────────┘              └──────────┘
-    │                           │                        │
-    │ next_token() × N          │ parse_program()        │ tabla símbolos
-    │                           │ descendente recursivo  │ chequeo errores
-    ▼                           ▼                        ▼
-  TOK_IF, TOK_IDENT,         PROGRAM                  AST validado ──┐
-  TOK_NUMBER, ...            ├ FUNC(main)                             │
-                               ├ ASSIGN               ┌─────────┐    │
-                               ├ IF/ELSE      ┌──────►│ Codegen │◄───┘
-                               ├ SWITCH       │       └─────────┘
-                               ├ WHILE        │            │
-                               └ CAST         │       output.s
-                                              │            │
-                                              │       .bss / .text
-                                              │       main:
-                                              │         pushq %rbp
-                                              │         ...
-                                              │         call factorial
-                                              │         ret
+┌───────────────┐  fuente     ┌─────────┐   stream de     ┌────────┐   AST en     ┌──────────┐
+│ Preprocessor  │───  pp  ──► │  Lexer  │───  tokens  ──► │ Parser │── memoria ──►│ Semantic │
+└───────────────┘             └─────────┘                 └────────┘              └──────────┘
+    │                           │                        │                          │
+    │ lee fuente pp             │ next_token() × N        │ parse_program()        │ tabla símbolos
+    │ expande macros            │                          │ descendente recursivo  │ chequeo errores
+    ▼                           ▼                          ▼                        ▼
+  fuente sin          TOK_IF, TOK_IDENT,         PROGRAM                  AST validado ──┐
+  directivas          TOK_NUMBER, ...            ├ FUNC(main)                             │
+  ni macros                                      ├ ASSIGN               ┌─────────┐    │
+                                                 ├ IF/ELSE      ┌──────►│ Codegen │◄───┘
+                                                 ├ SWITCH       │       └─────────┘
+                                                 ├ WHILE        │            │
+                                                 └ CAST         │       output.s
+                                                                │            │
+                                                                │       .bss / .text
+                                                                │       main:
+                                                                │         pushq %rbp
+                                                                │         ...
+                                                                │         call factorial
+                                                                │         ret
 ```
 
 Cada fase es independiente y se comunica solo por estructuras de datos:
+- **Preprocessor → Lexer**: archivo fuente preprocesado (sin directivas, macros expandidas)
 - **Lexer → Parser**: struct `Token` (tipo, lexema, valor, línea, columna)
 - **Parser → Semantic**: struct `ASTNode` (árbol enlazado con tipo, operador, hijos)
 - **Semantic → Codegen**: AST validado (misma estructura, sin errores)
 - **Codegen → gcc**: archivo `output.s` (assembly GAS/AT&T)
 
 ## Detalles de implementación
+
+### Preprocesador
+- Se ejecuta antes del lexer: lee el fuente original, expande directivas, escribe un archivo temporal preprocesado
+- `#include "file"` — inclusión recursiva con resolución de rutas relativas al directorio del archivo actual
+- `#define NOMBRE valor` — macros simples con expansión en el texto
+- `#define NOMBRE(a,b) cuerpo` — macros función-like con sustitución de parámetros
+- Expansión encadenada de macros con protección contra recursión infinita
+- Las macros no se expanden dentro de strings ni char literals
+- Soporte de continuación de línea con backslash `\`
 
 ### Lexer
 - Lookahead de 1 carácter (`ch` / `next_ch`)
@@ -518,13 +546,13 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 6 | `struct` — definición, declaración, acceso a miembros, asignación, structs anidados | ✓ |
 | 9 | Forward declarations, punteros a función, `extern` | ✓ |
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros tipados, punteros dobles | ✓ |
+| 10 | Preprocesador — `#include`, `#define` (simple y función-like), macros encadenadas | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
 | 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
-| 10 | Preprocesador — `#include`, `#define` (simples y con parámetros) | Media |
 | 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | Media |
 | 12 | IR intermedia — three-address code, SSA | Muy alta |
 | 13 | Backends adicionales — ARM64, WASM, RISC-V | Muy alta |

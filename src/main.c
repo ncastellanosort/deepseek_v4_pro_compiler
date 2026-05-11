@@ -3,9 +3,11 @@
 #include "codegen.h"
 #include "compiler.h"
 #include "semantic.h"
+#include "preprocessor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void run_gcc(void) {
     char cmd[512];
@@ -23,7 +25,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    const char *src_file = argv[1];
+    const char *orig_file = argv[1];
+
+    char *src_file = preprocess(orig_file);
+    if (!src_file) return 1;
 
     lexer_init(src_file);
 
@@ -35,6 +40,8 @@ int main(int argc, char **argv) {
         ast_print(ast, 0);
         ast_free(ast);
         lexer_destroy();
+        unlink(src_file);
+        free(src_file);
         return 0;
     }
 
@@ -49,6 +56,9 @@ int main(int argc, char **argv) {
     printf("Compilando con gcc...\n");
     run_gcc();
     printf("Ejecutable: build/prog\n");
+
+    unlink(src_file);
+    free(src_file);
 
     return 0;
 }

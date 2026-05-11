@@ -1,0 +1,9 @@
+#define CONST 42
+#define SALUDO "hola mundo"
+#define CHAR_X 'X'
+
+def main() {
+    print(CONST);
+    print(SALUDO);
+    print(CHAR_X);
+}

@@ -1,0 +1,13 @@
+#define A 10
+#define B A
+#define C B
+
+/* macro en string no debe expandirse */
+#define NAME "world"
+
+def main() {
+    print(A);            /* 10 */
+    print(B);            /* 10 (chained) */
+    print(C);            /* 10 (double chained) */
+    print("Hello NAME"); /* "Hello NAME" (no expande dentro de string) */
+}
