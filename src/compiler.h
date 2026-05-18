@@ -26,6 +26,8 @@ typedef enum {
     TOK_CHAR_LITERAL,
     TOK_EXTERN,
     TOK_SIZEOF,
+    TOK_FLOAT, TOK_DOUBLE,
+    TOK_FLOAT_NUMBER,
     TOK_ERROR
 } TokenType;
 
@@ -35,6 +37,7 @@ typedef struct {
     TokenType type;
     char lexeme[MAX_LEXEME];
     int int_value;
+    double float_value;
     int line;
     int col;
 } Token;
@@ -60,7 +63,8 @@ typedef enum {
     AST_CAST,        /* (type)expr          → num_value=type, left=expr */
     AST_MEMBER,      /* expr.field          → left=expr, var_name=field, num_value=offset, op=member_type */
     AST_CALL_INDIRECT,/* (*fp)(args)          → left=func_expr, right=first_arg */
-    AST_ARRAY_TYPED  /* int name[size]       → var_name=name, num_value=size, op=type */
+    AST_ARRAY_TYPED, /* int name[size]       → var_name=name, num_value=size, op=type */
+    AST_FLOAT_NUMBER /* float/double literal → dval=value */
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -71,6 +75,7 @@ typedef struct ASTNode {
     struct ASTNode *left;
     struct ASTNode *right;
     struct ASTNode *next;
+    double dval;
 } ASTNode;
 
 #define OP_LSHIFT 'L'
@@ -88,7 +93,9 @@ typedef struct ASTNode {
 #define TYPE_INT   0
 #define TYPE_CHAR  1
 #define TYPE_SHORT 2
-#define TYPE_LONG  3
+#define TYPE_LONG   3
+#define TYPE_FLOAT  4
+#define TYPE_DOUBLE 5
 
 #define TYPE_IS_STRUCT(t)  ((t) < 0)
 #define TYPE_STRUCT_ID(t)  (-(t) - 1)
@@ -136,6 +143,7 @@ ASTNode *ast_make_call(const char *n, ASTNode *a);
 ASTNode *ast_make_binary(char op, ASTNode *l, ASTNode *r);
 ASTNode *ast_make_unary(char op, ASTNode *o);
 ASTNode *ast_make_number(int v);
+ASTNode *ast_make_float_number(double v);
 ASTNode *ast_make_string(const char *s);
 ASTNode *ast_make_variable(const char *n);
 ASTNode *ast_make_index(const char *arr, ASTNode *idx);

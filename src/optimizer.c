@@ -5,6 +5,38 @@
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 
+#define is_float_type(t) ((t)==TYPE_FLOAT||(t)==TYPE_DOUBLE)
+
+static int is_float_expr_opt(ASTNode *n) {
+    if (!n) return 0;
+    if (n->type == AST_FLOAT_NUMBER) return 1;
+    if (n->type == AST_BINARY) {
+        if (n->op == OP_EQ || n->op == OP_NE || n->op == '<' || n->op == '>' ||
+            n->op == OP_LE || n->op == OP_GE) return 0;
+        return is_float_expr_opt(n->left) || is_float_expr_opt(n->right);
+    }
+    if (n->type == AST_UNARY) return is_float_expr_opt(n->left);
+    if (n->type == AST_CAST) return n->num_value == TYPE_FLOAT || n->num_value == TYPE_DOUBLE;
+    if (n->type == AST_TERNARY) return is_float_expr_opt(n->right) || is_float_expr_opt(n->next);
+    return 0;
+}
+
+static int eval_binary_double(char op, double a, double b, double *result) {
+    switch (op) {
+        case '+': *result = a + b; return 1;
+        case '-': *result = a - b; return 1;
+        case '*': *result = a * b; return 1;
+        case '/': if (b == 0.0) return 0; *result = a / b; return 1;
+        case OP_EQ:  *result = (a == b) ? 1.0 : 0.0; return 1;
+        case OP_NE:  *result = (a != b) ? 1.0 : 0.0; return 1;
+        case '<':  *result = (a < b) ? 1.0 : 0.0; return 1;
+        case '>':  *result = (a > b) ? 1.0 : 0.0; return 1;
+        case OP_LE: *result = (a <= b) ? 1.0 : 0.0; return 1;
+        case OP_GE: *result = (a >= b) ? 1.0 : 0.0; return 1;
+        default: return 0;
+    }
+}
+
 static int eval_binary(char op, int a, int b, int *result) {
     switch (op) {
         case '+': *result = a + b; return 1;
@@ -69,12 +101,28 @@ static int fold_node(ASTNode *n) {
             if (eval_binary(n->op, n->left->num_value, n->right->num_value, &r)) {
                 node_set_number(n, r); c = 1;
             }
+        } else if (is_float_expr_opt(n) &&
+                   n->left && n->left->type == AST_FLOAT_NUMBER &&
+                   n->right && n->right->type == AST_FLOAT_NUMBER) {
+            double r;
+            if (eval_binary_double(n->op, n->left->dval, n->right->dval, &r)) {
+                ast_free(n->left); n->left = NULL;
+                ast_free(n->right); n->right = NULL;
+                n->type = AST_FLOAT_NUMBER;
+                n->dval = r; c = 1;
+            }
         }
         break;
     case AST_UNARY:
         c |= fold_node(n->left);
         if (n->op == 'm' && n->left && n->left->type == AST_NUMBER) {
             node_set_number(n, -n->left->num_value); c = 1;
+        } else if (n->op == 'm' && n->left && n->left->type == AST_FLOAT_NUMBER) {
+            ASTNode *old = n->left;
+            n->type = AST_FLOAT_NUMBER;
+            n->dval = -(old->dval);
+            n->left = NULL;
+            ast_free(old); c = 1;
         } else if (n->op == OP_NOT && n->left && n->left->type == AST_NUMBER) {
             node_set_number(n, n->left->num_value ? 0 : 1); c = 1;
         }
@@ -93,7 +141,17 @@ static int fold_node(ASTNode *n) {
         break;
     case AST_CAST:
         c |= fold_node(n->left);
-        if (n->left && n->left->type == AST_NUMBER) {
+        if (n->left && n->left->type == AST_NUMBER && is_float_type(n->num_value)) {
+            double fv = (double)n->left->num_value;
+            ast_free(n->left); n->left = NULL;
+            n->type = AST_FLOAT_NUMBER;
+            n->dval = fv; c = 1;
+        } else if (n->left && n->left->type == AST_FLOAT_NUMBER && !is_float_type(n->num_value)) {
+            int iv = (int)n->left->dval;
+            ast_free(n->left); n->left = NULL;
+            n->type = AST_NUMBER;
+            n->num_value = iv; c = 1;
+        } else if (n->left && n->left->type == AST_NUMBER) {
             int v = n->left->num_value;
             switch (n->num_value) {
                 case TYPE_CHAR: v = (char)v; break;
@@ -216,6 +274,7 @@ static int cp_expr(ASTNode *n) {
         c |= cp_expr(n->left); c |= cp_expr(n->right); c |= cp_expr(n->next); break;
     case AST_INDEX: case AST_MEMBER:
         c |= cp_expr(n->left); break;
+    case AST_FLOAT_NUMBER: break;
     default: break;
     }
     return c;
@@ -237,7 +296,7 @@ static int cp_stmt(ASTNode *s) {
     case AST_ASSIGN:
         c |= cp_expr(s->right);
         if (s->left && s->left->type == AST_VARIABLE) {
-            if (s->right->type == AST_NUMBER)
+            if (s->right->type == AST_NUMBER || s->right->type == AST_FLOAT_NUMBER)
                 cp_set(s->left->var_name, ast_clone(s->right));
             else if (s->right->type == AST_VARIABLE && cp_get(s->right->var_name))
                 cp_set(s->left->var_name, ast_clone(cp_get(s->right->var_name)));
@@ -418,6 +477,7 @@ static ASTNode *subst_tree(ASTNode *tree, ASTNode *params, ASTNode *args) {
     if (!c) { fprintf(stderr, "Error: sin memoria\n"); exit(1); }
     c->type = tree->type;
     c->num_value = tree->num_value;
+    c->dval = tree->dval;
     strncpy(c->var_name, tree->var_name, MAX_LEXEME - 1);
     c->var_name[MAX_LEXEME - 1] = '\0';
     c->op = tree->op;

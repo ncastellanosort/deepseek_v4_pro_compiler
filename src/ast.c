@@ -21,10 +21,26 @@ const char *token_type_name(TokenType t) {
     case TOK_STRUCT:return"'struct'";case TOK_DOT:return".";
     case TOK_EXTERN:return"'extern'";
     case TOK_SIZEOF:return"'sizeof'";
+    case TOK_FLOAT:return"'float'";case TOK_DOUBLE:return"'double'";
+    case TOK_FLOAT_NUMBER:return"float_núm";
     default:return"?";}
 }
 
 static ASTNode *alloc_node(ASTNodeType t){ASTNode*n=calloc(1,sizeof(ASTNode));if(!n){fprintf(stderr,"Error: sin memoria\n");exit(1);}n->type=t;return n;}
+
+static const char *type_name_str(int t) {
+    if (TYPE_IS_STRUCT(t)) return struct_table[TYPE_STRUCT_ID(t)].name;
+    if (TYPE_IS_PTR(t)) return "ptr";
+    switch (t) {
+        case TYPE_INT: return "int";
+        case TYPE_CHAR: return "char";
+        case TYPE_SHORT: return "short";
+        case TYPE_LONG: return "long";
+        case TYPE_FLOAT: return "float";
+        case TYPE_DOUBLE: return "double";
+        default: return "?";
+    }
+}
 
 ASTNode *ast_make_program(ASTNode *f){ASTNode*n=alloc_node(AST_PROGRAM);n->next=f;return n;}
 ASTNode *ast_make_block(ASTNode *f){ASTNode*n=alloc_node(AST_BLOCK);n->next=f;return n;}
@@ -53,6 +69,7 @@ ASTNode *ast_make_print(ASTNode*e){ASTNode*n=alloc_node(AST_PRINT);n->left=e;ret
 ASTNode *ast_make_binary(char op,ASTNode*l,ASTNode*r){ASTNode*n=alloc_node(AST_BINARY);n->op=op;n->left=l;n->right=r;return n;}
 ASTNode *ast_make_unary(char op,ASTNode*o){ASTNode*n=alloc_node(AST_UNARY);n->op=op;n->left=o;return n;}
 ASTNode *ast_make_number(int v){ASTNode*n=alloc_node(AST_NUMBER);n->num_value=v;return n;}
+ASTNode *ast_make_float_number(double v){ASTNode*n=alloc_node(AST_FLOAT_NUMBER);n->dval=v;return n;}
 ASTNode *ast_make_string(const char*s){ASTNode*n=alloc_node(AST_STRING);strncpy(n->var_name,s,MAX_LEXEME-1);n->var_name[MAX_LEXEME-1]='\0';return n;}
 ASTNode *ast_make_variable(const char*nm){ASTNode*n=alloc_node(AST_VARIABLE);strncpy(n->var_name,nm,MAX_LEXEME-1);n->var_name[MAX_LEXEME-1]='\0';return n;}
 ASTNode *ast_make_index(const char*arr,ASTNode*idx){ASTNode*n=alloc_node(AST_INDEX);strncpy(n->var_name,arr,MAX_LEXEME-1);n->var_name[MAX_LEXEME-1]='\0';n->left=idx;return n;}
@@ -74,6 +91,7 @@ ASTNode *ast_clone(ASTNode*n){
     if(!n)return NULL;
     ASTNode*c=alloc_node(n->type);
     c->num_value=n->num_value;
+    c->dval=n->dval;
     strncpy(c->var_name,n->var_name,MAX_LEXEME-1);c->var_name[MAX_LEXEME-1]='\0';
     c->op=n->op;
     c->left=ast_clone(n->left);
@@ -92,4 +110,4 @@ static void pi(int n){for(int i=0;i<n;i++)printf("  ");}
 static void print_block(ASTNode*n,int ind){for(ASTNode*s=n->next;s;){if(s->type==AST_IF&&s->next&&s->next->type==AST_ELSE){ast_print(s,ind);s=s->next->next;}else if(s->type==AST_ELSE){pi(ind);printf("ELSE huérfano\n");s=s->next;}else{ast_print(s,ind);s=s->next;}}}
 
 void ast_print(ASTNode*n,int ind){if(!n)return;pi(ind);switch(n->type){case AST_PROGRAM:printf("PROGRAM\n");print_block(n,ind+1);break;case AST_FUNC:printf("FUNC(%s)\n",n->var_name);pi(ind+1);printf("PARAMS:");if(!n->left)printf(" -\n");else{printf("\n");for(ASTNode*p=n->left;p;p=p->next){pi(ind+2);printf("PARAM(%s)\n",p->var_name);}}pi(ind+1);printf("BODY:\n");ast_print(n->right,ind+2);break;case AST_BLOCK:printf("BLOCK\n");print_block(n,ind+1);break;case AST_IF:printf("IF\n");pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);pi(ind+1);printf("THEN:\n");ast_print(n->right,ind+2);if(n->next&&n->next->type==AST_ELSE){pi(ind+1);printf("ELSE:\n");ast_print(n->next->right,ind+2);}break;case AST_WHILE:printf("WHILE\n");pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);pi(ind+1);printf("BODY:\n");ast_print(n->right,ind+2);break;case AST_FOR:printf("FOR\n");pi(ind+1);printf("INIT:\n");if(n->left)ast_print(n->left,ind+2);else{pi(ind+2);printf("-\n");}pi(ind+1);printf("COND:\n");if(n->right->left)ast_print(n->right->left,ind+2);else{pi(ind+2);printf("-\n");}pi(ind+1);printf("BODY:\n");ast_print(n->right,ind+2);break;case AST_RETURN:printf("RETURN\n");ast_print(n->left,ind+1);break;case AST_CALL:printf("CALL(%s)\n",n->var_name);for(ASTNode*a=n->left;a;a=a->next)ast_print(a,ind+1);break;case AST_CALL_INDIRECT:printf("CALL_INDIRECT\n");ast_print(n->left,ind+1);for(ASTNode*a=n->right;a;a=a->next)ast_print(a,ind+1);break;case AST_ARRAY_DECL:printf("ARRAY_DECL(%s, %d)\n",n->var_name,n->num_value);break;
-case AST_ARRAY_TYPED:{const char*t[]={"int","char","short","long"};printf("ARRAY_TYPED(%s, %d, %s)\n",n->var_name,n->num_value,t[(int)n->op&3]);}break;case AST_BREAK:printf("BREAK\n");break;case AST_CONTINUE:printf("CONTINUE\n");break;case AST_ASSIGN:printf("ASSIGN\n");pi(ind+1);printf("TARGET:\n");ast_print(n->left,ind+2);pi(ind+1);printf("VALUE:\n");ast_print(n->right,ind+2);break;case AST_PRINT:printf("PRINT\n");ast_print(n->left,ind+1);break;case AST_BINARY:printf("BINARY(%s)\n",op_name(n->op));ast_print(n->left,ind+1);ast_print(n->right,ind+1);break;case AST_UNARY:printf("UNARY(%s)\n",op_name(n->op));ast_print(n->left,ind+1);break;case AST_NUMBER:printf("NUMBER(%d)\n",n->num_value);break;case AST_STRING:printf("STRING(\"%s\")\n",n->var_name);break;case AST_VARIABLE:printf("VARIABLE(%s)\n",n->var_name);break;case AST_INDEX:printf("INDEX(%s)\n",n->var_name);ast_print(n->left,ind+1);break;case AST_DEREF:printf("DEREF\n");ast_print(n->left,ind+1);break;case AST_ADDR:printf("ADDR\n");ast_print(n->left,ind+1);break;case AST_TERNARY:printf("TERNARY\n");pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);pi(ind+1);printf("THEN:\n");ast_print(n->right,ind+2);pi(ind+1);printf("ELSE:\n");ast_print(n->next,ind+2);break;case AST_DOWHILE:printf("DOWHILE\n");pi(ind+1);printf("BODY:\n");ast_print(n->right,ind+2);pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);break;case AST_DECL:{if(TYPE_IS_STRUCT(n->num_value))printf("DECL(struct %s, %s)\n",struct_table[TYPE_STRUCT_ID(n->num_value)].name,n->var_name);else{const char*t[]={"int","char","short","long"};printf("DECL(%s, %s)\n",t[n->num_value&3],n->var_name);}if(n->left){pi(ind+1);printf("INIT:\n");ast_print(n->left,ind+2);}}break;case AST_SWITCH:printf("SWITCH\n");pi(ind+1);printf("EXPR:\n");ast_print(n->left,ind+2);pi(ind+1);printf("CASES:\n");if(n->right)ast_print(n->right,ind+2);else{pi(ind+2);printf("-\n");}break;case AST_CASE:printf("CASE(%d)\n",n->num_value);if(n->left)ast_print(n->left,ind+1);if(n->next)ast_print(n->next,ind);break;case AST_DEFAULT:printf("DEFAULT\n");if(n->left)ast_print(n->left,ind+1);break;case AST_CAST:{if(TYPE_IS_STRUCT(n->num_value))printf("CAST(struct %s)\n",struct_table[TYPE_STRUCT_ID(n->num_value)].name);else{const char*t[]={"int","char","short","long"};printf("CAST(%s)\n",t[n->num_value&3]);}ast_print(n->left,ind+1);}break;case AST_MEMBER:{printf("MEMBER(%s, off=%d, type=%d)\n",n->var_name,n->num_value,n->op);ast_print(n->left,ind+1);}break;default:printf("???\n");break;}}
+case AST_ARRAY_TYPED:printf("ARRAY_TYPED(%s, %d, %s)\n",n->var_name,n->num_value,type_name_str((int)(unsigned char)n->op));break;case AST_BREAK:printf("BREAK\n");break;case AST_CONTINUE:printf("CONTINUE\n");break;case AST_ASSIGN:printf("ASSIGN\n");pi(ind+1);printf("TARGET:\n");ast_print(n->left,ind+2);pi(ind+1);printf("VALUE:\n");ast_print(n->right,ind+2);break;case AST_PRINT:printf("PRINT\n");ast_print(n->left,ind+1);break;case AST_BINARY:printf("BINARY(%s)\n",op_name(n->op));ast_print(n->left,ind+1);ast_print(n->right,ind+1);break;case AST_UNARY:printf("UNARY(%s)\n",op_name(n->op));ast_print(n->left,ind+1);break;case AST_NUMBER:printf("NUMBER(%d)\n",n->num_value);break;case AST_FLOAT_NUMBER:printf("FLOAT_NUMBER(%g)\n",n->dval);break;case AST_STRING:printf("STRING(\"%s\")\n",n->var_name);break;case AST_VARIABLE:printf("VARIABLE(%s)\n",n->var_name);break;case AST_INDEX:printf("INDEX(%s)\n",n->var_name);ast_print(n->left,ind+1);break;case AST_DEREF:printf("DEREF\n");ast_print(n->left,ind+1);break;case AST_ADDR:printf("ADDR\n");ast_print(n->left,ind+1);break;case AST_TERNARY:printf("TERNARY\n");pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);pi(ind+1);printf("THEN:\n");ast_print(n->right,ind+2);pi(ind+1);printf("ELSE:\n");ast_print(n->next,ind+2);break;case AST_DOWHILE:printf("DOWHILE\n");pi(ind+1);printf("BODY:\n");ast_print(n->right,ind+2);pi(ind+1);printf("COND:\n");ast_print(n->left,ind+2);break;case AST_DECL:{if(TYPE_IS_STRUCT(n->num_value))printf("DECL(struct %s, %s)\n",struct_table[TYPE_STRUCT_ID(n->num_value)].name,n->var_name);else{printf("DECL(%s, %s)\n",type_name_str(n->num_value),n->var_name);}if(n->left){pi(ind+1);printf("INIT:\n");ast_print(n->left,ind+2);}}break;case AST_SWITCH:printf("SWITCH\n");pi(ind+1);printf("EXPR:\n");ast_print(n->left,ind+2);pi(ind+1);printf("CASES:\n");if(n->right)ast_print(n->right,ind+2);else{pi(ind+2);printf("-\n");}break;case AST_CASE:printf("CASE(%d)\n",n->num_value);if(n->left)ast_print(n->left,ind+1);if(n->next)ast_print(n->next,ind);break;case AST_DEFAULT:printf("DEFAULT\n");if(n->left)ast_print(n->left,ind+1);break;case AST_CAST:{if(TYPE_IS_STRUCT(n->num_value))printf("CAST(struct %s)\n",struct_table[TYPE_STRUCT_ID(n->num_value)].name);else{printf("CAST(%s)\n",type_name_str(n->num_value));}ast_print(n->left,ind+1);}break;case AST_MEMBER:{printf("MEMBER(%s, off=%d, type=%d)\n",n->var_name,n->num_value,n->op);ast_print(n->left,ind+1);}break;default:printf("???\n");break;}}

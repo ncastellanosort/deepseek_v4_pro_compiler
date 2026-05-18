@@ -52,9 +52,11 @@ int type_size(int t) {
     if (TYPE_IS_STRUCT(t)) return struct_get_size(TYPE_STRUCT_ID(t));
     if (TYPE_IS_PTR(t)) return 8;
     switch (t) {
-        case TYPE_CHAR:  return 1;
-        case TYPE_SHORT: return 2;
-        case TYPE_INT:   return 4;
-        default:         return 8;
+        case TYPE_CHAR:   return 1;
+        case TYPE_SHORT:  return 2;
+        case TYPE_INT:    return 4;
+        case TYPE_FLOAT:  return 4;
+        case TYPE_DOUBLE: return 8;
+        default:          return 8;
     }
 }

@@ -44,7 +44,8 @@ static char compound_op(TokenType t) {
 }
 
 static int is_type_keyword(TokenType t) {
-    return t == TOK_INT || t == TOK_CHAR || t == TOK_SHORT || t == TOK_LONG;
+    return t == TOK_INT || t == TOK_CHAR || t == TOK_SHORT || t == TOK_LONG
+        || t == TOK_FLOAT || t == TOK_DOUBLE;
 }
 
 static int type_keyword_to_code(TokenType t) {
@@ -53,6 +54,8 @@ static int type_keyword_to_code(TokenType t) {
         case TOK_CHAR: return TYPE_CHAR;
         case TOK_SHORT: return TYPE_SHORT;
         case TOK_LONG: return TYPE_LONG;
+        case TOK_FLOAT: return TYPE_FLOAT;
+        case TOK_DOUBLE: return TYPE_DOUBLE;
         default: return TYPE_INT;
     }
 }
@@ -231,6 +234,7 @@ static ASTNode *parse_stmt(void) {
                         case TYPE_CHAR: msize=1; malign=1; break;
                         case TYPE_SHORT: msize=2; malign=2; break;
                         case TYPE_INT: msize=4; malign=4; break;
+                        case TYPE_FLOAT: msize=4; malign=4; break;
                         default: msize=8; malign=8; break;
                     }
                 }
@@ -533,6 +537,7 @@ static ASTNode *parse_unary(void) {
 static ASTNode *parse_factor(void) {
     if(check(TOK_SIZEOF)){advance();expect(TOK_LPAREN);int t=parse_type();expect(TOK_RPAREN);return ast_make_number(type_size(t));}
     if(check(TOK_NUMBER)){int v=current.int_value;advance();return ast_make_number(v);}
+    if(check(TOK_FLOAT_NUMBER)){double v=current.float_value;advance();return ast_make_float_number(v);}
     if(check(TOK_CHAR_LITERAL)){int v=current.int_value;advance();return ast_make_number(v);}
     if(check(TOK_STRING)){ASTNode *n=ast_make_string(current.lexeme);advance();return n;}
     if(check(TOK_IDENT)){

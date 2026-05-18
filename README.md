@@ -34,13 +34,22 @@ int z;                    // declarada sin inicializar (→ 0)
 char c = 'A';             // char (8-bit, sign-ext al cargar)
 short s = 999;            // short (16-bit, sign-ext al cargar)
 long L = 123456;          // long (64-bit)
+float f = 3.14;           // float (32-bit, SSE)
+double d = 2.718;         // double (64-bit, SSE)
 ```
 
 ### Expresiones
 
 ```
-// Aritmética
+// Aritmética (entera y flotante)
 +  -  *  /  %
+
+// Aritmética flotante — misma sintaxis, ejecutada con SSE
+float a = 1.5;  float b = 2.5;
+float c = a + b;              // 4.0 (addsd)
+float d = a * b;              // 3.75 (mulsd)
+double e = 10.0 / 4.0;        // 2.5 (divsd)
+double f = 2.0 + 3;           // 5.0 (int promovido autom.)
 
 // Bit a bit
 <<  >>  &  |  ^
@@ -65,6 +74,7 @@ max = a > b ? a : b;            // operador ternario
 
 ```
 42                             // número entero
+3.14  2.5  10.0                // número flotante (double precision)
 'a'   '\n'   '\t'   '\0'      // caracteres (con escape)
 '\r'  '\\'   '\''   '\"'      // más escapes
 "hola mundo"                   // string
@@ -119,7 +129,9 @@ int i = (int) s;            // sign-extiende de vuelta
 long L = (long) i;          // extiende a 64-bit
 
 // Cast en expresiones
-print((int) 3.14);          // no-válido aún (float no implementado)
+print((int) 3.14);          // 3 — float → int
+print((float) 5);           // 5.0 — int → float
+print((double) 10);         // 10.0 — int → double
 ```
 
 ### Structs
@@ -579,6 +591,10 @@ Cada tipo tiene su ancho real con signo:
 | `short` | 16-bit (2 bytes) | `movswq` (sign-ext) | `movw %ax` |
 | `int` | 32-bit (4 bytes) | `movslq` (sign-ext) | `movl %eax` |
 | `long` | 64-bit (8 bytes) | `movq` | `movq %rax` |
+| `float` | 32-bit (4 bytes) | `movss` → `cvtss2sd %xmm0` (promoción) | `cvtsd2ss` + `movss %xmm0` |
+| `double` | 64-bit (8 bytes) | `movsd %xmm0` | `movsd %xmm0` |
+
+Los tipos `float` y `double` usan registros SSE (`%xmm0`). Toda la aritmética se realiza en double precisión; los floats se promocionan al cargar (`cvtss2sd`) y se truncan al guardar (`cvtsd2ss`). Las operaciones usan `addsd`/`subsd`/`mulsd`/`divsd` y las comparaciones `ucomisd`.
 
 Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para retrocompatibilidad. Variables locales usan offsets negativos desde `%rbp` con 8-byte de alineación. Los strings son literales de solo lectura en `.rodata`.
 
@@ -596,12 +612,12 @@ Variables implícitas (sin keyword de tipo, `x = 5`) son `long` por defecto para
 | 8 | Memoria dinámica — `malloc`/`free`/`sizeof`, punteros tipados, punteros dobles | ✓ |
 | 10 | Preprocesador — `#include`, `#define` (simple y función-like), macros encadenadas | ✓ |
 | 11 | Optimizaciones — constant folding, copy propagation, dead code, inlining | ✓ |
+| 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | ✓ |
 
 ## Futuras implementaciones
 
 | Nivel | Contenido | Dificultad |
 |-------|-----------|------------|
-| 7 | `float` y `double` — literales `3.14`, aritmética SSE (xmm), conversión int↔float | Alta |
 | 12 | IR intermedia — three-address code, SSA | Muy alta |
 | 13 | Backends adicionales — ARM64, WASM, RISC-V | Muy alta |
 

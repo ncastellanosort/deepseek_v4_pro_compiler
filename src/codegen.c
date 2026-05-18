@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 static FILE *out;
 static int label_counter, str_counter;
@@ -22,6 +23,9 @@ static int type_scale(int t){if(TYPE_IS_PTR(t))return type_scale(TYPE_PTR_INNER(
 static const char *type_load_insn(int t){if(TYPE_IS_PTR(t))return "movq";switch(t){case TYPE_CHAR:return "movsbq"; case TYPE_SHORT:return "movswq"; case TYPE_INT:return "movslq"; default:return "movq";}}
 static const char *type_store_insn(int t){if(TYPE_IS_PTR(t))return "movq";switch(t){case TYPE_CHAR:return "movb"; case TYPE_SHORT:return "movw"; case TYPE_INT:return "movl"; default:return "movq";}}
 static const char *type_store_subreg(int t){if(TYPE_IS_PTR(t))return "%rax";switch(t){case TYPE_CHAR:return "%al"; case TYPE_SHORT:return "%ax"; case TYPE_INT:return "%eax"; default:return "%rax";}}
+static int is_float_type(int t){return t==TYPE_FLOAT||t==TYPE_DOUBLE;}
+static int is_float_expr(ASTNode *n);
+static const char *set_insn(char op);
 
 /* locals */
 #define MAX_LOCALS 128
@@ -46,6 +50,21 @@ static int local_add(const char *n) { int o=next_offset; strncpy(locals[local_co
 static void local_add_typed(const char *n, int t) { int sz; if(TYPE_IS_STRUCT(t)){sz=struct_get_size(TYPE_STRUCT_ID(t));if(sz<8)sz=8;sz=(sz+7)&~7;}else sz=8; next_offset-=sz; int o=next_offset; strncpy(locals[local_count].name,n,MAX_LEXEME-1); locals[local_count].name[MAX_LEXEME-1]=0; locals[local_count].offset=o; locals[local_count].type=t; local_count++; }
 static void gltype_set(const char *n, int t) { for(int i=0;i<gltype_count;i++) if(!strcmp(gltypes[i].name,n)){gltypes[i].type=t;return;} strncpy(gltypes[gltype_count].name,n,MAX_LEXEME-1); gltypes[gltype_count].name[MAX_LEXEME-1]=0; gltypes[gltype_count].type=t; gltype_count++; }
 static int gltype_get(const char *n) { for(int i=0;i<gltype_count;i++) if(!strcmp(gltypes[i].name,n)) return gltypes[i].type; return TYPE_LONG; }
+static int is_float_expr(ASTNode *n){
+    if(!n)return 0;
+    switch(n->type){
+        case AST_FLOAT_NUMBER:return 1;
+        case AST_VARIABLE:{int t=in_function?local_get_type(n->var_name):gltype_get(n->var_name);return is_float_type(t);}
+        case AST_BINARY:
+            if(n->op==OP_EQ||n->op==OP_NE||n->op=='<'||n->op=='>'||n->op==OP_LE||n->op==OP_GE)return 0;
+            return is_float_expr(n->left)||is_float_expr(n->right);
+        case AST_UNARY:return is_float_expr(n->left);
+        case AST_CAST:return is_float_type(n->num_value);
+        case AST_TERNARY:return is_float_expr(n->right)||is_float_expr(n->next);
+        case AST_MEMBER:return is_float_type((int)(unsigned char)n->op);
+        default:return 0;
+    }
+}
 static int arr_type(const char *n) { for(int i=0;i<array_count;i++) if(!strcmp(arrays[i].name,n)) return arrays[i].type; return TYPE_LONG; }
 static int new_label(void) { return label_counter++; }
 static int new_str(void) { return str_counter++; }
@@ -71,7 +90,13 @@ static void emit_print(const char *fmt) {
     fprintf(out,"\tmovq\t%%rax, %%rsi\n\tleaq\t%s(%%rip), %%rdi\n\txorl\t%%eax, %%eax\n\tcall\tprintf@PLT\n",fmt);
 }
 static void gen_print(ASTNode *n) {
-    gen_expr(n->left); emit_print(is_str(n->left)?"fmtS":"fmtD");
+    if(is_float_expr(n->left)){
+        gen_expr(n->left);
+        fprintf(out,"\tleaq\tfmtF(%%rip), %%rdi\n");
+        fprintf(out,"\tmovl\t$1, %%eax\n\tcall\tprintf@PLT\n");
+    }else{
+        gen_expr(n->left); emit_print(is_str(n->left)?"fmtS":"fmtD");
+    }
 }
 
 /* ── CALL ───────────────────────────────────────────────────────── */
@@ -126,7 +151,27 @@ static void gen_assign(ASTNode *n) {
             fprintf(out,"\tmovq\t$%d, %%rcx\n\tcld\n\trep movsb\n",sz);
             return;
         }
-        gen_expr(v);int o=local_find(t->var_name);
+        if(is_float_type(tp)){
+            int rhs_f=is_float_expr(v);
+            gen_expr(v);
+            if(!rhs_f)fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
+            int o=local_find(t->var_name);
+            if(o){
+                if(tp==TYPE_DOUBLE)fprintf(out,"\tmovsd\t%%xmm0, %d(%%rbp)\n",o);
+                else fprintf(out,"\tcvtsd2ss\t%%xmm0, %%xmm0\n\tmovss\t%%xmm0, %d(%%rbp)\n",o);
+            }else if(in_function){
+                o=local_add(t->var_name);
+                fprintf(out,"\tmovsd\t%%xmm0, %d(%%rbp)\n",o);
+            }else{
+                if(tp==TYPE_DOUBLE)fprintf(out,"\tmovsd\t%%xmm0, %s(%%rip)\n",t->var_name);
+                else fprintf(out,"\tcvtsd2ss\t%%xmm0, %%xmm0\n\tmovss\t%%xmm0, %s(%%rip)\n",t->var_name);
+            }
+            return;
+        }
+        int rhs_f=is_float_expr(v);
+        gen_expr(v);
+        if(rhs_f)fprintf(out,"\tcvttsd2si\t%%xmm0, %%rax\n");
+        int o=local_find(t->var_name);
         if(o){fprintf(out,"\t%s\t%s, %d(%%rbp)\n",type_store_insn(tp),type_store_subreg(tp),o);}
         else if(in_function){o=local_add(t->var_name);fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);}
         else {fprintf(out,"\t%s\t%s, %s(%%rip)\n",type_store_insn(tp),type_store_subreg(tp),t->var_name);}
@@ -136,9 +181,52 @@ static void gen_assign(ASTNode *n) {
     else if(t->type==AST_MEMBER){gen_member_addr(t);fprintf(out,"\tpushq\t%%rax\n");gen_expr(v);fprintf(out,"\tpopq\t%%rcx\n\t%s\t%s, (%%rcx)\n",type_store_insn(t->op),type_store_subreg(t->op));}
 }
 
+/* ── FLOAT NUMBER ────────────────────────────────────────────────── */
+static void gen_float_number(ASTNode *n) {
+    double d=n->dval; uint64_t bits;
+    memcpy(&bits,&d,sizeof(bits));
+    fprintf(out,"\tmovabsq\t$0x%lx, %%rax\n",bits);
+    fprintf(out,"\tmovq\t%%rax, %%xmm0\n");
+}
+
+/* ── FLOAT BINARY ────────────────────────────────────────────────── */
+static void gen_float_binary(ASTNode *n) {
+    int lhs_float=is_float_expr(n->left);
+    int rhs_float=is_float_expr(n->right);
+    gen_expr(n->left);
+    if(!lhs_float)fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
+    fprintf(out,"\tsubq\t$8, %%rsp\n\tmovsd\t%%xmm0, (%%rsp)\n");
+    gen_expr(n->right);
+    if(!rhs_float)fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
+    fprintf(out,"\tmovsd\t(%%rsp), %%xmm1\n\taddq\t$8, %%rsp\n");
+    char op=n->op;
+    if(set_insn(op)){
+        fprintf(out,"\tucomisd\t%%xmm1, %%xmm0\n");
+        switch(op){
+            case OP_EQ:fprintf(out,"\tsete\t%%al\n");break;
+            case OP_NE:fprintf(out,"\tsetne\t%%al\n");break;
+            case'<':fprintf(out,"\tseta\t%%al\n");break;
+            case'>':fprintf(out,"\tsetb\t%%al\n");break;
+            case OP_LE:fprintf(out,"\tsetae\t%%al\n");break;
+            case OP_GE:fprintf(out,"\tsetbe\t%%al\n");break;
+            default:break;
+        }
+        fprintf(out,"\tmovzbl\t%%al, %%eax\n");
+        return;
+    }
+    switch(op){
+        case'+':fprintf(out,"\taddsd\t%%xmm1, %%xmm0\n");break;
+        case'-':fprintf(out,"\tsubsd\t%%xmm0, %%xmm1\n\tmovsd\t%%xmm1, %%xmm0\n");break;
+        case'*':fprintf(out,"\tmulsd\t%%xmm1, %%xmm0\n");break;
+        case'/':fprintf(out,"\tdivsd\t%%xmm0, %%xmm1\n\tmovsd\t%%xmm1, %%xmm0\n");break;
+        default:fprintf(stderr,"Error: op '%c' no válida para float\n",op);exit(1);
+    }
+}
+
 /* ── BINARY ─────────────────────────────────────────────────────── */
 static const char *set_insn(char op) { switch(op){case OP_EQ:return"sete";case OP_NE:return"setne";case'<':return"setl";case'>':return"setg";case OP_LE:return"setle";case OP_GE:return"setge";default:return NULL;} }
 static void gen_binary(ASTNode *n) {
+    if(is_float_expr(n->left)||is_float_expr(n->right)){gen_float_binary(n);return;}
     gen_expr(n->left);fprintf(out,"\tpushq\t%%rax\n");gen_expr(n->right);
     char op=n->op;
     if(set_insn(op)){fprintf(out,"\tpopq\t%%rcx\n\tcmpq\t%%rax, %%rcx\n\t%s\t%%al\n\tmovzbl\t%%al, %%eax\n",set_insn(op));return;}
@@ -161,6 +249,11 @@ static void gen_binary(ASTNode *n) {
 /* ── UNARY ──────────────────────────────────────────────────────── */
 static void gen_unary(ASTNode *n) {
     gen_expr(n->left);
+    if(n->op=='m'&&is_float_expr(n->left)){
+        fprintf(out,"\tmovabsq\t$0x8000000000000000, %%rax\n");
+        fprintf(out,"\tmovq\t%%rax, %%xmm1\n\txorpd\t%%xmm1, %%xmm0\n");
+        return;
+    }
     switch(n->op){case'm':fprintf(out,"\tnegq\t%%rax\n");break; case OP_NOT:fprintf(out,"\ttestq\t%%rax,%%rax\n\tsete\t%%al\n\tmovzbl\t%%al,%%eax\n");break; case OP_DEREF:fprintf(out,"\tmovq\t(%%rax),%%rax\n");break; default:break;}
 }
 
@@ -185,6 +278,13 @@ static void gen_string(ASTNode *n) { int l=new_str(); fprintf(out,"\t.section .r
 static void gen_variable(ASTNode *n) {
     int o=local_find(n->var_name);
     int t=o?local_get_type(n->var_name):gltype_get(n->var_name);
+    if(is_float_type(t)){
+        const char *insn=(t==TYPE_DOUBLE)?"movsd":"movss";
+        if(o)fprintf(out,"\t%s\t%d(%%rbp), %%xmm0\n",insn,o);
+        else fprintf(out,"\t%s\t%s(%%rip), %%xmm0\n",insn,n->var_name);
+        if(t==TYPE_FLOAT)fprintf(out,"\tcvtss2sd\t%%xmm0, %%xmm0\n");
+        return;
+    }
     const char *insn=type_load_insn(t);
     if(o)fprintf(out,"\t%s\t%d(%%rbp), %%rax\n",insn,o);
     else fprintf(out,"\t%s\t%s(%%rip), %%rax\n",insn,n->var_name);
@@ -254,12 +354,15 @@ static void gen_dowhile(ASTNode *n) {
 /* ── TERNARY ────────────────────────────────────────────────────── */
 static void gen_ternary(ASTNode *n) {
     int el=new_label(), end=new_label();
+    int result_float=is_float_expr(n->right)||is_float_expr(n->next);
     gen_expr(n->left);
     fprintf(out,"\tcmpq\t$0,%%rax\n\tje\t.L%d\n",el);
     gen_expr(n->right);
+    if(result_float&&!is_float_expr(n->right))fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
     fprintf(out,"\tjmp\t.L%d\n",end);
     fprintf(out,".L%d:\n",el);
     gen_expr(n->next);
+    if(result_float&&!is_float_expr(n->next))fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
     fprintf(out,".L%d:\n",end);
 }
 
@@ -358,17 +461,27 @@ static void gen_stmt_list(ASTNode *first) {
 
 /* ── CAST ──────────────────────────────────────────────────────── */
 static void gen_cast(ASTNode *n) {
+    int src_f=is_float_expr(n->left);
     gen_expr(n->left);
     int target=n->num_value;
-    if(target==TYPE_CHAR) fprintf(out,"\tmovsbq\t%%al, %%rax\n");
-    else if(target==TYPE_SHORT) fprintf(out,"\tmovswq\t%%ax, %%rax\n");
-    else if(target==TYPE_INT) fprintf(out,"\tmovslq\t%%eax, %%rax\n");
+    if(is_float_type(target)&&!src_f){
+        fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
+    }else if(!is_float_type(target)&&src_f){
+        fprintf(out,"\tcvttsd2si\t%%xmm0, %%rax\n");
+        if(target==TYPE_CHAR) fprintf(out,"\tmovsbq\t%%al, %%rax\n");
+        else if(target==TYPE_SHORT) fprintf(out,"\tmovswq\t%%ax, %%rax\n");
+        else if(target==TYPE_INT) fprintf(out,"\tmovslq\t%%eax, %%rax\n");
+    }else if(!is_float_type(target)&&!src_f){
+        if(target==TYPE_CHAR) fprintf(out,"\tmovsbq\t%%al, %%rax\n");
+        else if(target==TYPE_SHORT) fprintf(out,"\tmovswq\t%%ax, %%rax\n");
+        else if(target==TYPE_INT) fprintf(out,"\tmovslq\t%%eax, %%rax\n");
+    }
 }
 
 /* ── expr dispatch ─────────────────────────────────────────────── */
 static void gen_expr(ASTNode *n) {
     if(!n)return;
-    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_CALL_INDIRECT:gen_call_indirect(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_CAST:gen_cast(n);break; case AST_MEMBER:gen_member_addr(n);fprintf(out,"\t%s\t(%%rax), %%rax\n",type_load_insn(n->op));break;        case AST_DECL:{
+    switch(n->type){ case AST_PRINT:gen_print(n);break; case AST_CALL:gen_call(n);break; case AST_CALL_INDIRECT:gen_call_indirect(n);break; case AST_ASSIGN:gen_assign(n);break; case AST_BINARY:gen_binary(n);break; case AST_UNARY:if(n->op==OP_ADDR)gen_addr(n);else gen_unary(n);break; case AST_NUMBER:gen_number(n);break; case AST_FLOAT_NUMBER:gen_float_number(n);break; case AST_STRING:gen_string(n);break; case AST_VARIABLE:gen_variable(n);break; case AST_INDEX:gen_index(n);break; case AST_DEREF:gen_deref(n);break; case AST_RETURN:gen_return(n);break; case AST_ARRAY_DECL:break; case AST_TERNARY:gen_ternary(n);break; case AST_CAST:gen_cast(n);break; case AST_MEMBER:gen_member_addr(n);fprintf(out,"\t%s\t(%%rax), %%rax\n",type_load_insn(n->op));break;        case AST_DECL:{
         int t=n->num_value;
         int o=local_find(n->var_name);
         if(!o&&in_function){local_add_typed(n->var_name,t);o=local_find(n->var_name);}
@@ -385,8 +498,24 @@ static void gen_expr(ASTNode *n) {
                 }else if(n->left->type==AST_MEMBER){gen_member_addr(n->left);fprintf(out,"\tmovq\t%%rax, %%rsi\n");}
                 else {gen_expr(n->left);fprintf(out,"\tmovq\t%%rax, %%rsi\n");}
                 fprintf(out,"\tmovq\t$%d, %%rcx\n\tcld\n\trep movsb\n",sz);
-            }else{
+            }else if(is_float_type(t)){
+                int init_f=is_float_expr(n->left);
                 gen_expr(n->left);
+                if(!init_f)fprintf(out,"\tcvtsi2sd\t%%rax, %%xmm0\n");
+                if(o){
+                    if(t==TYPE_DOUBLE)fprintf(out,"\tmovsd\t%%xmm0, %d(%%rbp)\n",o);
+                    else fprintf(out,"\tcvtsd2ss\t%%xmm0, %%xmm0\n\tmovss\t%%xmm0, %d(%%rbp)\n",o);
+                }else if(in_function){
+                    o=local_add(n->var_name);
+                    fprintf(out,"\tmovsd\t%%xmm0, %d(%%rbp)\n",o);
+                }else{
+                    if(t==TYPE_DOUBLE)fprintf(out,"\tmovsd\t%%xmm0, %s(%%rip)\n",n->var_name);
+                    else fprintf(out,"\tcvtsd2ss\t%%xmm0, %%xmm0\n\tmovss\t%%xmm0, %s(%%rip)\n",n->var_name);
+                }
+            }else{
+                int init_f=is_float_expr(n->left);
+                gen_expr(n->left);
+                if(init_f)fprintf(out,"\tcvttsd2si\t%%xmm0, %%rax\n");
                 if(o)fprintf(out,"\t%s\t%s, %d(%%rbp)\n",type_store_insn(t),type_store_subreg(t),o);
                 else if(in_function){o=local_add(n->var_name);fprintf(out,"\tmovq\t%%rax, %d(%%rbp)\n",o);}
                 else fprintf(out,"\t%s\t%s, %s(%%rip)\n",type_store_insn(t),type_store_subreg(t),n->var_name);
@@ -480,7 +609,7 @@ void codegen_program(ASTNode *program) {
         }
     }
 
-    fprintf(out,"\t.section .rodata\nfmtD:\n\t.string \"%%ld\\n\"\nfmtS:\n\t.string \"%%s\\n\"\n\t.text\n\t.extern\tprintf\n");
+    fprintf(out,"\t.section .rodata\nfmtD:\n\t.string \"%%ld\\n\"\nfmtS:\n\t.string \"%%s\\n\"\nfmtF:\n\t.string \"%%g\\n\"\n\t.text\n\t.extern\tprintf\n");
     if(func_mode){for(ASTNode*f=program->next;f;f=f->next){if(f->type!=AST_FUNC)continue;if(!f->right)continue;gen_func_header(f);gen_stmt_list(f->right->next);gen_func_footer();}}
     else {in_function=0;locals_clear();fprintf(out,"\t.globl\tmain\nmain:\n\tpushq\t%%rbp\n\tmovq\t%%rsp, %%rbp\n");gen_stmt_list(program->next);fprintf(out,"\tmovq\t$0, %%rax\n\tleave\n\tret\n");}
 }

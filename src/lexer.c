@@ -37,7 +37,7 @@ static void skip_ws_comments(void) {
 }
 
 static Token make_token(TokenType t, const char *l) {
-    Token tok; tok.type = t; tok.int_value = 0; tok.line = line; tok.col = col;
+    Token tok; tok.type = t; tok.int_value = 0; tok.float_value = 0.0; tok.line = line; tok.col = col;
     strncpy(tok.lexeme, l, MAX_LEXEME - 1);
     tok.lexeme[MAX_LEXEME - 1] = '\0';
     return tok;
@@ -65,6 +65,8 @@ static TokenType keyword_type(const char *s) {
     if (strcmp(s, "struct")==0) return TOK_STRUCT;
     if (strcmp(s, "extern")==0) return TOK_EXTERN;
     if (strcmp(s, "sizeof")==0) return TOK_SIZEOF;
+    if (strcmp(s, "float")==0) return TOK_FLOAT;
+    if (strcmp(s, "double")==0) return TOK_DOUBLE;
     return TOK_IDENT;
 }
 
@@ -72,6 +74,13 @@ static Token read_number(void) {
     char b[MAX_LEXEME]; int i = 0;
     b[i++]=(char)ch; read_char();
     while (ch!=EOF&&isdigit(ch)) { if(i<MAX_LEXEME-1)b[i++]=(char)ch; read_char(); }
+    /* detect float literal: digits.digits */
+    if (ch=='.'&&isdigit(next_ch)) {
+        if(i<MAX_LEXEME-1)b[i++]=(char)ch; read_char();
+        while (ch!=EOF&&isdigit(ch)) { if(i<MAX_LEXEME-1)b[i++]=(char)ch; read_char(); }
+        b[i]='\0';
+        Token t=make_token(TOK_FLOAT_NUMBER,b); t.float_value=strtod(b,NULL); return t;
+    }
     b[i]='\0';
     Token t=make_token(TOK_NUMBER,b); t.int_value=atoi(b); return t;
 }
